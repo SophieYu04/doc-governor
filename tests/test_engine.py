@@ -9,6 +9,7 @@ from pathlib import Path
 from docgov.catalog import Catalog
 from docgov.agent import _json_from_text
 from docgov.engine import analyze, analyze_trust, apply_safe_actions, build_snapshot, record_baseline
+from docgov.git_tools import content_at_ref
 from docgov.ledger import Ledger
 from docgov.models import Evidence, Finding, GovernanceDecision
 from docgov.supabase import inventory
@@ -126,6 +127,14 @@ documents:
         )
         self.assertEqual(decision.result, "action_required")
         self.assertNotIn("passed its 7-day", " ".join(item.reason for item in decision.findings))
+
+    def test_binary_dependency_at_source_ref_has_stable_content(self) -> None:
+        binary_path = self.root / "assets/image.png"
+        binary_path.parent.mkdir(parents=True, exist_ok=True)
+        binary_path.write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff")
+        head = self.commit("binary dependency")
+
+        self.assertEqual(content_at_ref(self.root, head, "assets/image.png"), binary_path.read_bytes().hex())
 
     def test_conflicting_canonical_documents_are_not_deleted(self) -> None:
         catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))

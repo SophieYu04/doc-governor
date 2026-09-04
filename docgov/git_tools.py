@@ -56,9 +56,19 @@ def untracked_paths(root: Path) -> List[str]:
 
 def content_at_ref(root: Path, ref: str, relative_path: str) -> Optional[str]:
     try:
-        return run_git(root, "show", f"{ref}:{relative_path}")
+        result = subprocess.run(
+            ["git", "show", f"{ref}:{relative_path}"],
+            cwd=root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
+    try:
+        return result.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        return result.stdout.hex()
 
 
 def changed_paths(root: Path, base: str | None, head: str | None) -> Tuple[List[str], List[str]]:
