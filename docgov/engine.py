@@ -271,6 +271,7 @@ def analyze_trust(
 ) -> GovernanceDecision:
     """Return a fail-closed, read-only trust decision for tracked Markdown."""
     requested = list(requested_paths or [])
+    explicit_request = bool(requested)
     controls = set(snapshot.catalog.policies.get("control_documents", ["AGENTS.md"]))
     available = set(snapshot.files)
     paths = requested or sorted(available)
@@ -315,7 +316,8 @@ def analyze_trust(
             continue
         if scope == "untrusted":
             trust_results.append(TrustResult(normalized, record.type, record.status, scope, reason, summarized))
-            findings.append(Finding("stale", "high", "block", [normalized], reason, summarized))
+            if explicit_request:
+                findings.append(Finding("stale", "high", "block", [normalized], reason, summarized))
             continue
         if record.type in {"state", "procedure"} and expired(record, snapshot.catalog, now=now):
             reason = f"The {record.type} document has passed its {snapshot.catalog.ttl_for(record)}-day verification window."

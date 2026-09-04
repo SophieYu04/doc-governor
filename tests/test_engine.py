@@ -348,6 +348,23 @@ verify_jwt = false
         self.assertEqual(decision.trust_results[0].scope, "untrusted")
         self.assertIn("misclassified", [finding.kind for finding in decision.findings])
 
+    def test_strict_verify_quarantines_declared_stale_until_requested(self) -> None:
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        catalog["documents"] = [{
+            "path": "docs/status/OLD.md",
+            "type": "state",
+            "status": "stale",
+        }]
+        write(self.catalog_path, json.dumps(catalog))
+        write(self.root / "docs/status/OLD.md", "# Old state\n")
+        self.commit("quarantined state")
+        snapshot = build_snapshot(self.root, self.catalog_path, ledger_path=self.ledger_path)
+        global_decision = analyze_trust(snapshot, self.ledger_path)
+        requested_decision = analyze_trust(snapshot, self.ledger_path, ["docs/status/OLD.md"])
+        self.assertEqual(global_decision.result, "pass")
+        self.assertEqual(global_decision.trust_results[0].scope, "untrusted")
+        self.assertEqual(requested_decision.result, "action_required")
+
     def test_strict_verify_detects_dependency_fingerprint_drift(self) -> None:
         catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
         catalog["documents"] = [{
