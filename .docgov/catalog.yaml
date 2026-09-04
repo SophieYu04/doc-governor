@@ -42,7 +42,8 @@
       "type": "state",
       "owner": "release",
       "status": "current",
-      "last_verified_at": "2026-09-03T00:00:00Z"
+      "last_verified_at": "2026-09-03T00:00:00Z",
+      "depends_on": ["examples/supabase-demo/supabase/**"]
     }
   ],
   "policies": {

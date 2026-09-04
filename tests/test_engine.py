@@ -424,16 +424,37 @@ verify_jwt = false
             "type": "state",
             "status": "current",
             "last_verified_at": old,
+            "depends_on": ["src/release.txt"],
         }]
         catalog["policies"]["require_verification_ledger"] = True
         write(self.catalog_path, json.dumps(catalog))
         write(self.root / "docs/status/RELEASE.md", "# Release\n")
+        write(self.root / "src/release.txt", "verified\n")
         self.commit("expired state")
         snapshot = build_snapshot(self.root, self.catalog_path, ledger_path=self.ledger_path)
         record_baseline(snapshot, self.ledger_path, approved=True)
         decision = analyze_trust(snapshot, self.ledger_path)
         self.assertEqual(decision.result, "action_required")
         self.assertIn("verification window", decision.findings[0].reason)
+
+    def test_baseline_rejects_state_without_evidence_and_writes_nothing(self) -> None:
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        catalog["documents"] = [{
+            "path": "docs/status/RELEASE.md",
+            "type": "state",
+            "status": "current",
+            "last_verified_at": datetime.now(timezone.utc).isoformat(),
+        }]
+        write(self.catalog_path, json.dumps(catalog))
+        write(self.root / "docs/status/RELEASE.md", "# Release\n")
+        self.commit("state without evidence")
+        decision = record_baseline(
+            build_snapshot(self.root, self.catalog_path, ledger_path=self.ledger_path),
+            self.ledger_path,
+            approved=True,
+        )
+        self.assertEqual(decision.result, "action_required")
+        self.assertFalse(self.ledger_path.exists())
 
     def test_strict_verify_ignores_untracked_markdown(self) -> None:
         catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))

@@ -373,6 +373,7 @@ def record_baseline(
     changed = False
     modified: List[str] = []
     findings: List[Finding] = []
+    events: List[Tuple[DocumentRecord, Dict[str, object]]] = []
     for record in snapshot.catalog.documents:
         if record.path not in wanted:
             continue
@@ -386,6 +387,23 @@ def record_baseline(
         if scope == "untrusted":
             continue
         event = verification_record(snapshot, record)
+        if record.type == "state" and not event["evidence"]:
+            findings.append(Finding(
+                "unverified_date", "high", "block", [record.path],
+                "A State baseline requires read-only source or evidence dependencies.",
+            ))
+            continue
+        events.append((record, event))
+    if findings:
+        return GovernanceDecision(
+            run_id=f"{snapshot.head_sha}-baseline",
+            mode="baseline",
+            result="action_required",
+            changed=False,
+            findings=findings,
+            head_sha=snapshot.head_sha,
+        )
+    for record, event in events:
         changed = ledger.append(
             run_id=f"{snapshot.head_sha}-baseline",
             document=record.path,
