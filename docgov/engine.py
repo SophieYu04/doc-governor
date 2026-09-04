@@ -664,8 +664,17 @@ def analyze(snapshot: RepositorySnapshot, mode: str = "review", run_id: Optional
         snapshot.catalog.classify(path) == "evidence" or path == snapshot.ledger_path
         for path in snapshot.changed
     ):
+        removable_duplicates = {
+            finding.documents[0]
+            for finding in findings
+            if finding.kind == "duplicate"
+            and finding.risk == "low"
+            and finding.action == "merge_new_file"
+            and finding.documents
+        }
         changed_dates = [
             path for path in snapshot.changed
+            if path not in removable_duplicates
             if (path.endswith(".md") or path == snapshot.catalog_path)
             and DATE_PATTERN.search(
                 snapshot.files.get(

@@ -252,6 +252,12 @@ create policy media_read on storage.objects using (bucket_id = 'avatars');
         self.assertEqual(result["storage_buckets"], ["avatars", "post-media"])
         self.assertEqual(result["document_markers"]["docs/architecture/API.md"]["functions"], ["health-check"])
 
+    def test_supabase_inventory_ignores_marker_examples_in_markdown_code(self) -> None:
+        write(self.root / "README.md", 'Example: `<!-- docgov:supabase-inventory {"functions":["fake"]} -->`\n')
+        write(self.root / "docs/architecture/API.md", '```md\n<!-- docgov:supabase-inventory {"functions":["also-fake"]} -->\n```\n')
+        self.commit("marker examples")
+        self.assertEqual(inventory(self.root)["document_markers"], {})
+
     def test_supabase_source_config_mismatch_is_blocked(self) -> None:
         write(self.root / "supabase/config.toml", "[functions.health-check]\nverify_jwt = true\n")
         write(self.root / "supabase/functions/health-check/index.ts", "export default {};\n")

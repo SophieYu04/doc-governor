@@ -12,6 +12,11 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.exists() else ""
 
 
+def _without_markdown_code(text: str) -> str:
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    return re.sub(r"`[^`\n]*`", "", text)
+
+
 def _document_markers(root: Path) -> Dict[str, Any]:
     markers: Dict[str, Any] = {}
     pattern = re.compile(r"<!--\s*docgov:supabase-inventory\s*(\{.*?\})\s*-->", re.DOTALL)
@@ -21,7 +26,7 @@ def _document_markers(root: Path) -> Dict[str, Any]:
         paths = list(root.rglob("*.md"))
     for path in paths:
         relative = path.relative_to(root).as_posix()
-        for match in pattern.finditer(_read(path)):
+        for match in pattern.finditer(_without_markdown_code(_read(path))):
             try:
                 value = json.loads(match.group(1))
             except json.JSONDecodeError:
