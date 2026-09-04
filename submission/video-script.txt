@@ -1,0 +1,27 @@
+DOC GOVERNOR — 4:30 DEMO SCRIPT
+
+00:00–00:35 — Problem
+Coding agents write Markdown faster than small teams can review it. The result is duplicate API notes, status pages with refreshed dates but no evidence, and old branches that future agents mistake for current truth. For a one-to-ten-person engineering team, this is not cosmetic debt. It changes what the next agent builds.
+
+00:35–01:05 — Product
+Doc Governor is a GitHub PR agent that gives every document one of five lifecycles: Contract, State, Procedure, Evidence, or Decision. A central Catalog names the canonical file, owner, dependencies, TTL, and protected paths. An append-only ledger records exactly what was verified and against which source hashes.
+
+01:05–01:35 — Architecture
+Show the README Mermaid diagram. A pull request enters the GitHub Action. Deterministic tools inspect the diff, link graph, hashes, TTLs, Catalog, and Supabase inventory. One Strands Governor on Amazon Bedrock receives only bounded, relevant Markdown for semantic classification. Deterministic policy validates every proposed action before any file changes.
+
+01:35–02:35 — Working demo
+Run: python scripts/demo.py --keep
+Open the temporary repository. The simulated coding agent added a Supabase Edge Function, copied the API document, changed a State verification date without evidence, and edited protected public copy. Show the decision JSON and tool trace. Doc Governor updates the API and Edge inventory from aligned config and source, merges the duplicate, rewrites links, and records hashes in the ledger. It does not touch the unsupported State claim or protected copy; those remain action_required.
+
+02:35–03:20 — Pull request experience
+Show a real demo pull request. The bot creates one safe correction commit and one updatable decision-card comment. Show source paths and hashes for each correction. Add docgov-approved to demonstrate a one-time decision for the current head SHA. After the run, the label is removed. Add a new commit and show that the prior approval is not reused.
+
+03:20–03:50 — No stale reads
+In Firstgram, run: scripts/docgov-read docs/architecture/API.md
+It passes and reads the canonical codex/appstore-release version. Then run the same command for a review_required legal file. The read is blocked. Repeat from another branch to show that branch names and old handoffs cannot become authority.
+
+03:50–04:15 — Security and operations
+Fork pull requests are read-only, use pull_request rather than pull_request_target, and receive no AWS identity. Same-repository semantic checks exchange GitHub OIDC for a short-lived, least-privilege Bedrock role. A daily audit creates or updates one maintenance pull request instead of writing to main.
+
+04:15–04:30 — Close
+Doc Governor turns documentation from agent exhaust into verified infrastructure. It helps small teams keep the speed of coding agents without letting yesterday's Markdown become tomorrow's false memory.

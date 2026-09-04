@@ -1,0 +1,15 @@
+{
+  "project_name": "Doc Governor",
+  "tagline": "An evidence-backed agent that stops AI-generated documentation from becoming false memory.",
+  "track": "Professional Agents",
+  "description": "Doc Governor is a GitHub PR agent for small AI-native engineering teams. Coding agents can produce useful documentation quickly, but they also create duplicate notes, refresh dates without verification, mix historical evidence with current state, and leave stale files that future agents treat as truth. Doc Governor classifies every governed document as Contract, State, Procedure, Evidence, or Decision; fingerprints its source dependencies; and records successful verification in an append-only ledger. On each pull request, deterministic tools inspect the Git diff, Markdown link graph, Catalog, TTLs, hashes, and Supabase source inventory. A Strands Governor running on Amazon Bedrock handles bounded semantic questions while deterministic policy retains final control. Safe corrections are committed to the pull request branch, including merging a newly added duplicate into its canonical document, rewriting changed links, and synchronizing machine-readable API and Edge Function inventories. Ambiguous, protected, unsupported, or evidence-free claims stay blocked in one updatable decision card. Fork pull requests remain read-only and never receive AWS credentials. A daily audit opens a maintenance pull request when State or Procedure documents expire. The included demo reproduces the full workflow without private data and the same trust gate is integrated into Firstgram so Codex reads only evidence-backed canonical Markdown.",
+  "built_with": [
+    "Python 3.12",
+    "Strands Agents SDK",
+    "Amazon Bedrock",
+    "GitHub Actions",
+    "GitHub OIDC",
+    "Supabase"
+  ],
+  "source_disclosure": "This project was created during the hackathon submission period. The motivating documentation problem came from maintaining Firstgram, but the governor engine, action, fixtures, and tests were implemented from scratch for this submission. No Firstgram private code, credentials, production data, or deployment artifacts are included."
+}

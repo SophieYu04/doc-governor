@@ -28,6 +28,13 @@
       "owner": "release",
       "status": "current",
       "last_verified_at": "2026-09-03T00:00:00Z"
+    },
+    {
+      "path": "docs/public/ANNOUNCEMENT.md",
+      "type": "contract",
+      "owner": "legal",
+      "status": "current",
+      "approval": "human"
     }
   ],
   "policies": {

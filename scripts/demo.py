@@ -8,10 +8,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-from docgov.catalog import Catalog
-from docgov.models import DocumentRecord
-
-
 def git(root: Path, *args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=root, text=True).strip()
 
@@ -30,18 +26,6 @@ def run_demo(destination: Path) -> dict[str, object]:
     git(destination, "config", "user.email", "demo@example.com")
 
     public_doc = destination / "docs" / "public" / "ANNOUNCEMENT.md"
-    public_doc.parent.mkdir(parents=True, exist_ok=True)
-    public_doc.write_text("# Announcement\n\nReviewed public copy.\n", encoding="utf-8")
-    catalog_path = destination / ".docgov" / "catalog.yaml"
-    catalog = Catalog.load(catalog_path)
-    catalog.documents.append(DocumentRecord(
-        path="docs/public/ANNOUNCEMENT.md",
-        type="contract",
-        owner="legal",
-        status="current",
-        approval="human",
-    ))
-    catalog.save(catalog_path)
     base = commit(destination, "demo baseline")
 
     function = destination / "supabase" / "functions" / "send-email" / "index.ts"
