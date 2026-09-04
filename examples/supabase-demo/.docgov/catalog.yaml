@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "taxonomy": {
+    "contract": ["docs/architecture/**"],
+    "state": ["docs/status/**"],
+    "procedure": ["docs/operations/**"],
+    "evidence": ["docs/evidence/**"],
+    "decision": ["docs/decisions/**"]
+  },
+  "documents": [
+    {
+      "path": "docs/architecture/API.md",
+      "type": "contract",
+      "owner": "backend",
+      "status": "current",
+      "depends_on": ["supabase/functions/**", "supabase/config.toml"]
+    },
+    {
+      "path": "docs/architecture/EDGE_FUNCTIONS.md",
+      "type": "contract",
+      "owner": "backend",
+      "status": "current",
+      "depends_on": ["supabase/functions/**", "supabase/config.toml"]
+    },
+    {
+      "path": "docs/status/RELEASE.md",
+      "type": "state",
+      "owner": "release",
+      "status": "current",
+      "last_verified_at": "2026-09-03T00:00:00Z"
+    }
+  ],
+  "policies": {
+    "auto_remove_new_duplicates": true,
+    "protected": [
+      "docs/legal/**",
+      "docs/public/**",
+      "docs/status/production*.md",
+      "docs/status/production/**"
+    ]
+  }
+}

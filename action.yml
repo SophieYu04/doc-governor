@@ -1,0 +1,171 @@
+name: Doc Governor
+description: Govern AI-generated Markdown with evidence-backed checks and safe PR-branch commits.
+author: Sophie Yu
+inputs:
+  mode:
+    description: review, audit, or init
+    required: false
+    default: review
+  root:
+    description: Repository path to govern
+    required: false
+    default: .
+  catalog:
+    description: Catalog path relative to root
+    required: false
+    default: .docgov/catalog.yaml
+  ledger:
+    description: Ledger path relative to root
+    required: false
+    default: .docgov/ledger.jsonl
+  base_sha:
+    description: Base commit for review mode
+    required: false
+    default: ""
+  head_sha:
+    description: Head commit for review mode
+    required: false
+    default: ""
+  apply:
+    description: Apply safe actions and commit to the PR branch
+    required: false
+    default: "false"
+  approved:
+    description: Treat the docgov-approved label as a one-time authorization for a duplicate correction or reviewed protected edit
+    required: false
+    default: "false"
+  enable_model:
+    description: Enable the Strands Bedrock Governor
+    required: false
+    default: "false"
+  model_id:
+    description: Amazon Bedrock model or inference profile ID
+    required: false
+    default: us.anthropic.claude-sonnet-4-20250514-v1:0
+  aws_region:
+    description: AWS region used by Bedrock
+    required: false
+    default: us-west-2
+outputs:
+  result:
+    description: pass, changed, action_required, or blocked
+    value: ${{ steps.finalize.outputs.result }}
+  changed:
+    description: Whether the action changed governed files
+    value: ${{ steps.finalize.outputs.changed }}
+  finding_count:
+    description: Number of findings
+    value: ${{ steps.finalize.outputs.finding_count }}
+  decision_json:
+    description: Path to the JSON decision result
+    value: ${{ steps.finalize.outputs.decision_json }}
+  commit_sha:
+    description: Current commit after a safe correction commit
+    value: ${{ steps.finalize.outputs.commit_sha }}
+runs:
+  using: composite
+  steps:
+    - name: Set up Python 3.12
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      with:
+        python-version: "3.12"
+    - name: Install Doc Governor
+      shell: bash
+      env:
+        DOCGOV_ENABLE_MODEL: ${{ inputs.enable_model }}
+      run: |
+        if [ "$DOCGOV_ENABLE_MODEL" = "true" ]; then
+          python -m pip install --disable-pip-version-check --quiet "${{ github.action_path }}[bedrock]"
+        else
+          python -m pip install --disable-pip-version-check --quiet "${{ github.action_path }}"
+        fi
+    - name: Govern documentation
+      id: govern
+      shell: bash
+      env:
+        DOCGOV_ROOT: ${{ inputs.root }}
+        DOCGOV_CATALOG: ${{ inputs.catalog }}
+        DOCGOV_LEDGER: ${{ inputs.ledger }}
+        DOCGOV_MODE: ${{ inputs.mode }}
+        DOCGOV_BASE: ${{ inputs.base_sha }}
+        DOCGOV_HEAD: ${{ inputs.head_sha }}
+        DOCGOV_APPLY: ${{ inputs.apply }}
+        DOCGOV_APPROVED: ${{ inputs.approved }}
+        DOCGOV_ENABLE_MODEL: ${{ inputs.enable_model }}
+        DOCGOV_MODEL_ID: ${{ inputs.model_id }}
+        AWS_REGION: ${{ inputs.aws_region }}
+      run: |
+        set +e
+        args=(--root "$DOCGOV_ROOT" --catalog "$DOCGOV_CATALOG" --ledger "$DOCGOV_LEDGER" --json)
+        if [ "$DOCGOV_MODE" = "init" ]; then
+          args+=(init)
+          if [ "$DOCGOV_APPLY" = "true" ]; then args+=(--apply); fi
+        else
+          args+=("$DOCGOV_MODE")
+          if [ -n "$DOCGOV_BASE" ]; then args+=(--base "$DOCGOV_BASE"); fi
+          if [ -n "$DOCGOV_HEAD" ]; then args+=(--head "$DOCGOV_HEAD"); fi
+          if [ "$DOCGOV_APPLY" = "true" ]; then args+=(--apply); fi
+          if [ "$DOCGOV_APPROVED" = "true" ]; then args+=(--approved); fi
+          if [ "$DOCGOV_ENABLE_MODEL" = "true" ]; then args+=(--enable-model --model-id "$DOCGOV_MODEL_ID"); fi
+        fi
+        python -m docgov "${args[@]}" > "$RUNNER_TEMP/docgov-result.json"
+        status=$?
+        if ! python -c 'import json,sys; value=json.load(open(sys.argv[1])); assert isinstance(value, dict)' "$RUNNER_TEMP/docgov-result.json" 2>/dev/null; then
+          printf '%s\n' '{"result":"blocked","changed":false,"finding_count":0,"findings":[],"modified_paths":[],"model_used":false,"error":"Doc Governor did not return valid JSON."}' > "$RUNNER_TEMP/docgov-result.json"
+          status=2
+        fi
+        cat "$RUNNER_TEMP/docgov-result.json"
+        result=$(python -c 'import json,sys; print(json.load(open(sys.argv[1])).get("result", "blocked"))' "$RUNNER_TEMP/docgov-result.json")
+        changed=$(python -c 'import json,sys; print(str(bool(json.load(open(sys.argv[1])).get("changed", False))).lower())' "$RUNNER_TEMP/docgov-result.json")
+        finding_count=$(python -c 'import json,sys; print(json.load(open(sys.argv[1])).get("finding_count", 0))' "$RUNNER_TEMP/docgov-result.json")
+        if [ "$DOCGOV_APPROVED" = "true" ] && { [ "$result" = "pass" ] || [ "$result" = "changed" ]; }; then
+          python -m docgov.github --result "$RUNNER_TEMP/docgov-result.json" --remove-approved-label
+        else
+          python -m docgov.github --result "$RUNNER_TEMP/docgov-result.json"
+        fi
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+        echo "changed=$changed" >> "$GITHUB_OUTPUT"
+        echo "finding_count=$finding_count" >> "$GITHUB_OUTPUT"
+        echo "decision_json=$RUNNER_TEMP/docgov-result.json" >> "$GITHUB_OUTPUT"
+        echo "commit_sha=$(git rev-parse HEAD 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+        if [ "$status" -ne 0 ]; then exit "$status"; fi
+    - name: Commit safe correction to the PR branch
+      id: commit
+      if: inputs.apply == 'true' && steps.govern.outputs.changed == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        git config user.name "doc-governor[bot]"
+        git config user.email "doc-governor[bot]@users.noreply.github.com"
+        python - "$RUNNER_TEMP/docgov-result.json" <<'PY'
+        import json
+        import subprocess
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as handle:
+            paths = json.load(handle).get("modified_paths", [])
+        if paths:
+            subprocess.run(["git", "add", "--", *paths], check=True)
+        PY
+        if git diff --cached --quiet; then exit 0; fi
+        git commit -m "chore(docs): apply Doc Governor correction"
+        git -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" push origin "HEAD:${GITHUB_HEAD_REF}"
+    - name: Finalize action outputs
+      id: finalize
+      if: always()
+      shell: bash
+      run: |
+        result=blocked
+        changed=false
+        finding_count=0
+        if [ -f "$RUNNER_TEMP/docgov-result.json" ]; then
+          result=$(python -c 'import json,sys; print(json.load(open(sys.argv[1])).get("result", "blocked"))' "$RUNNER_TEMP/docgov-result.json")
+          changed=$(python -c 'import json,sys; print(str(bool(json.load(open(sys.argv[1])).get("changed", False))).lower())' "$RUNNER_TEMP/docgov-result.json")
+          finding_count=$(python -c 'import json,sys; print(json.load(open(sys.argv[1])).get("finding_count", 0))' "$RUNNER_TEMP/docgov-result.json")
+        fi
+        echo "result=$result" >> "$GITHUB_OUTPUT"
+        echo "changed=$changed" >> "$GITHUB_OUTPUT"
+        echo "finding_count=$finding_count" >> "$GITHUB_OUTPUT"
+        echo "decision_json=$RUNNER_TEMP/docgov-result.json" >> "$GITHUB_OUTPUT"
+        echo "commit_sha=$(git rev-parse HEAD 2>/dev/null || true)" >> "$GITHUB_OUTPUT"

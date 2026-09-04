@@ -1,0 +1,49 @@
+name: Doc Governor initialize Catalog
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  init:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - name: Prepare idempotent Catalog branch
+        id: branch
+        env:
+          BRANCH: docgov/init-catalog
+        shell: bash
+        run: |
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$BRANCH"
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+          else
+            git checkout -b "$BRANCH"
+          fi
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+      - uses: SophieYu04/doc-governor@v0.1.0
+        id: docgov
+        with:
+          mode: init
+          apply: true
+      - name: Open Catalog proposal PR
+        if: steps.docgov.outputs.result == 'changed'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+        shell: bash
+        run: |
+          git config user.name "doc-governor[bot]"
+          git config user.email "doc-governor[bot]@users.noreply.github.com"
+          git add -- .docgov
+          git commit -m "chore(docs): propose Doc Governor catalog"
+          git push --set-upstream origin "$BRANCH"
+          if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')" = "0" ]; then
+            gh pr create --title "chore(docs): propose Doc Governor catalog" --body "Review the generated document taxonomy, owners, dependencies, and TTLs before enabling automatic governance."
+          fi

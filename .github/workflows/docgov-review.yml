@@ -1,0 +1,36 @@
+name: Doc Governor review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+
+jobs:
+  govern:
+    if: github.event.action != 'labeled' || github.event.label.name == 'docgov-approved'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check out PR as data
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Run Doc Governor
+        uses: SophieYu04/doc-governor@v0.1.0
+        with:
+          mode: review
+          base_sha: ${{ github.event.pull_request.base.sha }}
+          head_sha: ${{ github.event.pull_request.head.sha }}
+          apply: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+          approved: ${{ github.event.action == 'labeled' && github.event.label.name == 'docgov-approved' }}
+          enable_model: false
+          aws_region: us-west-2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
