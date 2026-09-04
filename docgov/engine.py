@@ -3,6 +3,8 @@ from __future__ import annotations
 import difflib
 import fnmatch
 import hashlib
+import json
+import posixpath
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -30,6 +32,8 @@ DATE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 LINK_PATTERN = re.compile(r"\[[^\]]+\]\(([^)#]+)(?:#[^)]+)?\)")
+MARKDOWN_LINK_PATTERN = re.compile(r"(\[[^\]]+\]\()([^)#]+)(#[^)]*)?(\))")
+SUPABASE_MARKER_PATTERN = re.compile(r"<!--\s*docgov:supabase-inventory\s*(\{.*?\})\s*-->", re.DOTALL)
 
 
 @dataclass
@@ -46,6 +50,7 @@ class RepositorySnapshot:
     diff: str = ""
     head_sha: str = "unknown"
     source_ref: Optional[str] = None
+    source_ledger_entries: Optional[List[Dict[str, object]]] = None
     supabase: Dict[str, object] = field(default_factory=dict)
 
 
@@ -71,8 +76,6 @@ def build_snapshot(
     ledger_path: Path | None = None,
     source_ref: str | None = None,
 ) -> RepositorySnapshot:
-    catalog = Catalog.load(catalog_path)
-    changed, added = changed_paths(root, base, head)
     ledger_file = ledger_path or (root / ".docgov/ledger.jsonl")
     try:
         catalog_relative = catalog_path.relative_to(root).as_posix()
@@ -82,10 +85,22 @@ def build_snapshot(
         ledger_relative = ledger_file.relative_to(root).as_posix()
     except ValueError:
         ledger_relative = str(ledger_file)
-    ledger = Ledger(ledger_file)
+    source_ledger_entries: Optional[List[Dict[str, object]]] = None
+    if source_ref:
+        catalog_text = content_at_ref(root, source_ref, catalog_relative)
+        if catalog_text is None:
+            raise ValueError(f"Catalog is missing at {source_ref}:{catalog_relative}")
+        catalog = Catalog.loads(catalog_text, source=f"{source_ref}:{catalog_relative}")
+        ledger_text = content_at_ref(root, source_ref, ledger_relative)
+        source_ledger_entries = Ledger.parse(ledger_text or "")
+        ledger_entries = source_ledger_entries
+    else:
+        catalog = Catalog.load(catalog_path)
+        ledger_entries = Ledger(ledger_file).entries()
+    changed, added = changed_paths(root, base, head)
     removed_by_governor = {
         str(entry.get("document"))
-        for entry in ledger.entries()
+        for entry in ledger_entries
         if entry.get("action") == "remove_new_duplicate"
     }
     return RepositorySnapshot(
@@ -105,6 +120,7 @@ def build_snapshot(
             else current_sha(root)
         ),
         source_ref=source_ref,
+        source_ledger_entries=source_ledger_entries,
         supabase=supabase_inventory(root),
     )
 
@@ -122,6 +138,34 @@ def similarity(left: str, right: str) -> float:
 
 def local_links(text: str) -> List[str]:
     return [match.group(1) for match in LINK_PATTERN.finditer(text) if not match.group(1).startswith(("http://", "https://", "mailto:"))]
+
+
+def _resolved_link(source_path: str, target: str) -> Optional[str]:
+    value = target.strip()
+    if not value or value.startswith(("http://", "https://", "mailto:", "#")):
+        return None
+    if value.startswith("/"):
+        value = value.lstrip("/")
+    return posixpath.normpath(posixpath.join(posixpath.dirname(source_path), value))
+
+
+def links_to_document(source_path: str, text: str, target_path: str) -> bool:
+    return any(
+        _resolved_link(source_path, match.group(2)) == target_path
+        for match in MARKDOWN_LINK_PATTERN.finditer(text)
+    )
+
+
+def rewrite_document_links(source_path: str, text: str, old_path: str, new_path: str) -> str:
+    source_directory = posixpath.dirname(source_path) or "."
+    replacement = posixpath.relpath(new_path, source_directory)
+
+    def replace(match: re.Match[str]) -> str:
+        if _resolved_link(source_path, match.group(2)) != old_path:
+            return match.group(0)
+        return f"{match.group(1)}{replacement}{match.group(3) or ''}{match.group(4)}"
+
+    return MARKDOWN_LINK_PATTERN.sub(replace, text)
 
 
 def repository_path(root: Path, relative_path: str) -> Optional[Path]:
@@ -278,6 +322,11 @@ def analyze_trust(
     trust_results: List[TrustResult] = []
     findings: List[Finding] = []
     ledger = Ledger(ledger_path)
+    ledger_entries = (
+        snapshot.source_ledger_entries
+        if snapshot.source_ledger_entries is not None
+        else ledger.entries()
+    )
     require_ledger = bool(snapshot.catalog.policies.get("require_verification_ledger", True))
 
     configured_functions = snapshot.supabase.get("config_functions", [])
@@ -325,7 +374,12 @@ def analyze_trust(
             findings.append(Finding("stale", "high", "block", [normalized], reason, summarized))
             continue
 
-        baseline = ledger.latest_for(normalized, "verify_current")
+        matching_baselines = [
+            entry
+            for entry in ledger_entries
+            if entry.get("document") == normalized and entry.get("action") == "verify_current"
+        ]
+        baseline = matching_baselines[-1] if matching_baselines else None
         if require_ledger and baseline is None:
             reason = "No successful verification baseline exists in the append-only ledger."
             trust_results.append(TrustResult(normalized, record.type, record.status, "untrusted", reason, summarized))
@@ -454,6 +508,7 @@ def analyze(snapshot: RepositorySnapshot, mode: str = "review", run_id: Optional
 
     configured_functions = snapshot.supabase.get("config_functions", [])
     source_functions = snapshot.supabase.get("source_functions", [])
+    supabase_sync_paths: set[str] = set()
     if configured_functions or source_functions:
         if configured_functions != source_functions:
             findings.append(Finding(
@@ -468,6 +523,43 @@ def analyze(snapshot: RepositorySnapshot, mode: str = "review", run_id: Optional
                 ),
                 human_decision="Resolve the source/config mismatch before updating documentation.",
             ))
+        else:
+            inventory_keys = {
+                "functions": "source_functions",
+                "jwt_flags": "jwt_flags",
+                "rpcs": "rpc_functions",
+                "storage_buckets": "storage_buckets",
+            }
+            for document, marker in snapshot.supabase.get("document_markers", {}).items():
+                if not isinstance(marker, dict) or marker.get("invalid"):
+                    findings.append(Finding(
+                        kind="conflict",
+                        risk="high",
+                        action="block",
+                        documents=[str(document)],
+                        reason="The Supabase inventory marker is not valid JSON.",
+                    ))
+                    continue
+                desired = dict(marker)
+                for marker_key, inventory_key in inventory_keys.items():
+                    if marker_key in marker:
+                        desired[marker_key] = snapshot.supabase.get(inventory_key, [])
+                if desired != marker:
+                    path = str(document)
+                    record = snapshot.catalog.record_for(path)
+                    if record is None:
+                        continue
+                    evidence = dependency_summary(record, dependency_evidence(snapshot, record))
+                    findings.append(Finding(
+                        kind="stale",
+                        risk="low",
+                        action="update",
+                        documents=[path],
+                        reason="The machine-readable Supabase inventory differs from aligned source and config.",
+                        evidence=evidence,
+                        proposed_patch=f"<!-- docgov:supabase-inventory {json.dumps(desired, ensure_ascii=False, sort_keys=True, separators=(',', ':'))} -->",
+                    ))
+                    supabase_sync_paths.add(path)
 
     for path in snapshot.changed:
         if path.endswith(".md") and path not in snapshot.files and path not in snapshot.removed_by_governor:
@@ -518,6 +610,8 @@ def analyze(snapshot: RepositorySnapshot, mode: str = "review", run_id: Optional
             if snapshot.catalog.classify(candidate) != document_type:
                 continue
             score = similarity(snapshot.files[path], content)
+            if content.strip() and content.strip() in snapshot.files[path]:
+                score = max(score, 0.95)
             if score > best_score:
                 best_path, best_score = candidate, score
         if best_path and best_score >= 0.90:
@@ -542,7 +636,11 @@ def analyze(snapshot: RepositorySnapshot, mode: str = "review", run_id: Optional
 
     if mode in {"review", "audit"}:
         for record in impacted_records(snapshot):
-            if record.type in {"contract", "state", "procedure"} and record.path not in snapshot.changed:
+            if (
+                record.type in {"contract", "state", "procedure"}
+                and record.path not in snapshot.changed
+                and record.path not in supabase_sync_paths
+            ):
                 findings.append(Finding(
                     kind="stale",
                     risk="low",
@@ -626,30 +724,29 @@ def apply_safe_actions(
     conflicting canonical documents, so those findings remain blocked.
     """
     if decision.high_risk_findings:
-        if not approved:
-            return decision
-        for finding in decision.high_risk_findings:
-            if finding.kind == "duplicate" and finding.action == "block":
-                finding.risk = "low"
-                finding.action = "merge_new_file"
-                finding.human_decision = None
-            elif (
-                finding.kind == "conflict"
-                and finding.action == "block"
-                and finding.reason.startswith("Protected legal, public, business, or production-status")
-            ):
-                # Human approval acknowledges an already-reviewed protected
-                # edit; the Governor still performs no content rewrite.
-                finding.risk = "low"
-                finding.action = "noop"
-                finding.human_decision = None
-        if decision.high_risk_findings:
-            return decision
+        if approved:
+            for finding in decision.high_risk_findings:
+                if finding.kind == "duplicate" and finding.action == "block":
+                    finding.risk = "low"
+                    finding.action = "merge_new_file"
+                    finding.human_decision = None
+                elif (
+                    finding.kind == "conflict"
+                    and finding.action == "block"
+                    and finding.reason.startswith("Protected legal, public, business, or production-status")
+                ):
+                    # Human approval acknowledges an already-reviewed protected
+                    # edit; the Governor still performs no content rewrite.
+                    finding.risk = "low"
+                    finding.action = "noop"
+                    finding.human_decision = None
     ledger = Ledger(ledger_path)
-    changed = False
     modified_paths: List[str] = []
     removed_paths: set[str] = set()
     pending_ledger: List[Dict[str, object]] = []
+    planned_writes: Dict[str, str] = {}
+    verified_paths: set[str] = set()
+    catalog_before = json.dumps(snapshot.catalog.to_dict(), sort_keys=True)
     for finding in decision.findings:
         if finding.action == "merge_new_file" and len(finding.documents) == 2:
             new_path, canonical_path = finding.documents
@@ -678,28 +775,70 @@ def apply_safe_actions(
                 return decision
             if not new_file.exists() or not canonical_file.exists():
                 continue
-            if normalize_markdown(new_file.read_text(encoding="utf-8")) != normalize_markdown(canonical_file.read_text(encoding="utf-8")):
+            new_content = new_file.read_text(encoding="utf-8")
+            canonical_content = canonical_file.read_text(encoding="utf-8")
+            exact_duplicate = normalize_markdown(new_content) == normalize_markdown(canonical_content)
+            additive_duplicate = bool(canonical_content.strip()) and canonical_content.strip() in new_content
+            if not exact_duplicate and not additive_duplicate:
                 finding.risk = "high"
                 finding.action = "block"
                 finding.human_decision = "Review the unique sections and choose whether to merge them manually."
                 decision.result = "action_required"
                 return decision
-            incoming = [path for path, content in snapshot.files.items() if new_path in local_links(content)]
-            if incoming:
-                finding.risk = "high"
-                finding.action = "block"
-                finding.human_decision = "Remove inbound links or merge the document manually before deleting it."
-                decision.result = "action_required"
-                return decision
-            new_file.unlink()
+            incoming = [
+                path
+                for path, content in snapshot.files.items()
+                if path != new_path and links_to_document(path, planned_writes.get(path, content), new_path)
+            ]
+            for incoming_path in incoming:
+                incoming_record = snapshot.catalog.record_for(incoming_path)
+                if (
+                    incoming_path not in snapshot.changed
+                    or snapshot.catalog.is_protected(incoming_path)
+                    or (incoming_record and incoming_record.type in {"evidence", "decision"})
+                ):
+                    finding.risk = "high"
+                    finding.action = "block"
+                    finding.human_decision = "An inbound link is outside the safely changed Markdown boundary."
+                    decision.result = "action_required"
+                    return decision
+                previous_content = planned_writes.get(incoming_path, snapshot.files[incoming_path])
+                rewritten = rewrite_document_links(incoming_path, previous_content, new_path, canonical_path)
+                if rewritten == previous_content:
+                    finding.risk = "high"
+                    finding.action = "block"
+                    finding.human_decision = "The inbound link could not be rewritten deterministically."
+                    decision.result = "action_required"
+                    return decision
+                planned_writes[incoming_path] = rewritten
+                pending_ledger.append({
+                    "document": incoming_path,
+                    "action": "update_link",
+                    "reason": f"Repointed the changed Markdown link from {new_path} to {canonical_path}.",
+                    "evidence": [Evidence(path=canonical_path, sha256=sha256_text(new_content if additive_duplicate else canonical_content))],
+                    "previous_hash": sha256_text(previous_content),
+                    "new_hash": sha256_text(rewritten),
+                })
+            if additive_duplicate and new_content != canonical_content:
+                planned_writes[canonical_path] = new_content
+                pending_ledger.append({
+                    "document": canonical_path,
+                    "action": "update",
+                    "reason": f"Preserved the additive content from new duplicate {new_path} in the canonical document.",
+                    "evidence": [Evidence(path=new_path, sha256=sha256_text(new_content))],
+                    "previous_hash": sha256_text(canonical_content),
+                    "new_hash": sha256_text(new_content),
+                })
             modified_paths.append(new_path)
             removed_paths.add(new_path)
-            changed = True
+            duplicate_record = snapshot.catalog.record_for(new_path)
+            if duplicate_record is not None:
+                snapshot.catalog.documents.remove(duplicate_record)
             pending_ledger.append({
                 "document": new_path,
                 "action": "remove_new_duplicate",
-                "reason": f"Merged into {canonical_path}; the file was newly added in this change and had no inbound links.",
-                "evidence": evidence_for_path(snapshot, canonical_path),
+                "reason": f"Merged into {canonical_path}; unique content and changed-file links were preserved before removing the new file.",
+                "evidence": [Evidence(path=canonical_path, sha256=sha256_text(new_content if additive_duplicate else canonical_content))],
                 "previous_hash": sha256_text(snapshot.files[new_path]),
                 "new_hash": None,
             })
@@ -708,29 +847,91 @@ def apply_safe_actions(
                 record = snapshot.catalog.record_for(document)
                 if record and record.status != "stale":
                     record.status = "stale"
-                    modified_paths.append(catalog_path.relative_to(snapshot.root).as_posix())
-                    changed = True
                     pending_ledger.append({
                         "document": document,
                         "action": "mark_stale",
                         "reason": finding.reason,
                         "evidence": finding.evidence,
                     })
+        elif finding.action == "update" and len(finding.documents) == 1 and finding.proposed_patch:
+            document = finding.documents[0]
+            record = snapshot.catalog.record_for(document)
+            destination = repository_path(snapshot.root, document)
+            if (
+                destination is None
+                or not document.endswith(".md")
+                or not destination.exists()
+                or record is None
+                or record.type in {"evidence", "decision"}
+                or snapshot.catalog.is_protected(document)
+                or not finding.proposed_patch.startswith("<!-- docgov:supabase-inventory ")
+            ):
+                finding.risk = "high"
+                finding.action = "block"
+                finding.human_decision = "The proposed update crossed the governed generated-inventory boundary."
+                decision.result = "action_required"
+                return decision
+            previous_content = planned_writes.get(document, destination.read_text(encoding="utf-8"))
+            matches = list(SUPABASE_MARKER_PATTERN.finditer(previous_content))
+            if len(matches) != 1:
+                finding.risk = "high"
+                finding.action = "block"
+                finding.human_decision = "Exactly one machine-readable Supabase inventory marker is required."
+                decision.result = "action_required"
+                return decision
+            updated_content = SUPABASE_MARKER_PATTERN.sub(finding.proposed_patch, previous_content, count=1)
+            planned_writes[document] = updated_content
+            record.status = "current"
+            if record.type in {"state", "procedure"}:
+                record.last_verified_at = utc_now()
+            verified_paths.add(document)
+            pending_ledger.append({
+                "document": document,
+                "action": "update",
+                "reason": finding.reason,
+                "evidence": finding.evidence,
+                "previous_hash": sha256_text(previous_content),
+                "new_hash": sha256_text(updated_content),
+            })
     for path in snapshot.added:
         if not path.endswith(".md") or path in removed_paths or path not in snapshot.files:
             continue
         document_type = snapshot.catalog.classify(path)
         if document_type and snapshot.catalog.record_for(path) is None:
             snapshot.catalog.ensure_record(path, document_type)
-            modified_paths.append(catalog_path.relative_to(snapshot.root).as_posix())
-            changed = True
             pending_ledger.append({
                 "document": path,
                 "action": "catalog_register",
                 "reason": f"Registered new {document_type} document in the central Catalog.",
                 "evidence": evidence_for_path(snapshot, path),
             })
-    if changed:
+    catalog_changed = json.dumps(snapshot.catalog.to_dict(), sort_keys=True) != catalog_before
+    for path, content in planned_writes.items():
+        destination = repository_path(snapshot.root, path)
+        if destination is None or not path.endswith(".md"):
+            raise RuntimeError(f"Planned write escaped the Markdown boundary: {path}")
+        destination.write_text(content, encoding="utf-8")
+        modified_paths.append(path)
+    for path in removed_paths:
+        destination = repository_path(snapshot.root, path)
+        if destination is not None and destination.exists():
+            destination.unlink()
+    for document in sorted(verified_paths):
+        record = snapshot.catalog.record_for(document)
+        if record is None:
+            continue
+        dependencies = dependency_evidence(snapshot, record)
+        pending_ledger.append({
+            "document": document,
+            "action": "verify_current",
+            "reason": "Deterministic Supabase inventory matched source and config after synchronization.",
+            "evidence": dependency_summary(record, dependencies),
+            "new_hash": sha256_text(planned_writes[document]),
+            "dependency_fingerprint": dependency_fingerprint(dependencies),
+            "verifier": "supabase_inventory",
+        })
+    if catalog_changed:
+        modified_paths.append(catalog_path.relative_to(snapshot.root).as_posix())
         catalog_previous_hash = sha256_file(catalog_path) if catalog_path.exists() else None
         snapshot.catalog.save(catalog_path)
         catalog_new_hash = sha256_file(catalog_path)
@@ -738,7 +939,7 @@ def apply_safe_actions(
         catalog_previous_hash = None
         catalog_new_hash = None
     for event in pending_ledger:
-        is_catalog_event = event["action"] in {"mark_stale", "catalog_register"}
+        is_catalog_event = event["action"] in {"mark_stale", "catalog_register", "remove_new_duplicate"} and catalog_changed
         ledger.append(
             run_id=decision.run_id,
             document=str(event["document"]),
@@ -748,12 +949,17 @@ def apply_safe_actions(
             previous_hash=(catalog_previous_hash if is_catalog_event else event.get("previous_hash")),  # type: ignore[arg-type]
             new_hash=(catalog_new_hash if is_catalog_event else event.get("new_hash")),  # type: ignore[arg-type]
             head_sha=decision.head_sha,
+            dependency_fingerprint=event.get("dependency_fingerprint"),  # type: ignore[arg-type]
+            verifier=event.get("verifier"),  # type: ignore[arg-type]
         )
     if pending_ledger:
         modified_paths.append(ledger_path.relative_to(snapshot.root).as_posix())
+    changed = bool(planned_writes or removed_paths or catalog_changed)
     decision.changed = changed
     decision.modified_paths = sorted(set(modified_paths))
-    if changed:
+    if decision.high_risk_findings:
+        decision.result = "action_required"
+    elif changed:
         decision.result = "changed"
     elif decision.result == "action_required" and not decision.high_risk_findings:
         decision.result = "pass"

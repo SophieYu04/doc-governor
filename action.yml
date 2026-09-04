@@ -46,6 +46,10 @@ inputs:
     description: AWS region used by Bedrock
     required: false
     default: us-west-2
+  model_timeout_seconds:
+    description: Fail closed if the Strands invocation exceeds this duration
+    required: false
+    default: "60"
 outputs:
   result:
     description: pass, changed, action_required, or blocked
@@ -93,6 +97,7 @@ runs:
         DOCGOV_APPROVED: ${{ inputs.approved }}
         DOCGOV_ENABLE_MODEL: ${{ inputs.enable_model }}
         DOCGOV_MODEL_ID: ${{ inputs.model_id }}
+        DOCGOV_MODEL_TIMEOUT_SECONDS: ${{ inputs.model_timeout_seconds }}
         AWS_REGION: ${{ inputs.aws_region }}
       run: |
         set +e
@@ -126,9 +131,9 @@ runs:
         echo "result=$result" >> "$GITHUB_OUTPUT"
         echo "changed=$changed" >> "$GITHUB_OUTPUT"
         echo "finding_count=$finding_count" >> "$GITHUB_OUTPUT"
+        echo "exit_code=$status" >> "$GITHUB_OUTPUT"
         echo "decision_json=$RUNNER_TEMP/docgov-result.json" >> "$GITHUB_OUTPUT"
         echo "commit_sha=$(git rev-parse HEAD 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
-        if [ "$status" -ne 0 ]; then exit "$status"; fi
     - name: Commit safe correction to the PR branch
       id: commit
       if: inputs.apply == 'true' && steps.govern.outputs.changed == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
@@ -169,3 +174,4 @@ runs:
         echo "finding_count=$finding_count" >> "$GITHUB_OUTPUT"
         echo "decision_json=$RUNNER_TEMP/docgov-result.json" >> "$GITHUB_OUTPUT"
         echo "commit_sha=$(git rev-parse HEAD 2>/dev/null || true)" >> "$GITHUB_OUTPUT"
+        if [ "$result" = "action_required" ] || [ "$result" = "blocked" ]; then exit 2; fi

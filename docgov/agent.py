@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from typing import Any, Dict, List, Literal
 
 from .engine import RepositorySnapshot, analyze
@@ -18,6 +19,11 @@ returned by tools. Never invent dates, source paths, product decisions, legal te
 or production status. Return JSON with a `findings` array. Every finding must use
 one of: duplicate, stale, misclassified, unverified_date, orphan, conflict.
 """.strip()
+
+DEFAULT_MODEL_ID = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+DEFAULT_MODEL_TIMEOUT_SECONDS = 60.0
+MAX_MODEL_DOCUMENT_CHARS = 12_000
+MAX_MODEL_CONTEXT_CHARS = 60_000
 
 
 def _result_text(result: Any) -> str:
@@ -68,10 +74,37 @@ def _model_findings(payload: Dict[str, Any]) -> List[Finding]:
     return findings
 
 
+def _bounded_documents(snapshot: RepositorySnapshot) -> Dict[str, str]:
+    """Return only PR-relevant Markdown, capped before it reaches the model."""
+    candidates: List[str] = []
+    for path in snapshot.changed + snapshot.added:
+        if path.endswith(".md") and path in snapshot.files and path not in candidates:
+            candidates.append(path)
+    changed_types = {
+        snapshot.catalog.classify(path)
+        for path in candidates
+        if snapshot.catalog.classify(path)
+    }
+    for path in sorted(snapshot.files):
+        if snapshot.catalog.classify(path) in changed_types and path not in candidates:
+            candidates.append(path)
+
+    result: Dict[str, str] = {}
+    remaining = MAX_MODEL_CONTEXT_CHARS
+    for path in candidates:
+        if remaining <= 0:
+            break
+        content = snapshot.files[path]
+        excerpt = content[: min(MAX_MODEL_DOCUMENT_CHARS, remaining)]
+        result[path] = excerpt
+        remaining -= len(excerpt)
+    return result
+
+
 def invoke_strands(snapshot: RepositorySnapshot, baseline: GovernanceDecision, model_id: str | None = None) -> GovernanceDecision:
     try:
         from strands import Agent, tool  # type: ignore
-        from strands.models.bedrock import BedrockModel  # type: ignore
+        from strands.models import BedrockModel  # type: ignore
         from pydantic import BaseModel, Field  # type: ignore
     except ImportError as exc:
         raise RuntimeError("Strands is not installed; run with DOCGOV_ENABLE_MODEL=0 for offline checks") from exc
@@ -95,21 +128,44 @@ def invoke_strands(snapshot: RepositorySnapshot, baseline: GovernanceDecision, m
         return json.dumps({
             "changed_paths": snapshot.changed,
             "added_paths": snapshot.added,
+            "documents": _bounded_documents(snapshot),
+            "catalog": [record.to_dict() for record in snapshot.catalog.documents],
             "supabase": snapshot.supabase,
             "baseline_findings": [item.to_dict() for item in baseline.findings],
         }, ensure_ascii=False)
 
-    model_kwargs: Dict[str, Any] = {}
-    if model_id:
-        model_kwargs["model_id"] = model_id
+    model_kwargs: Dict[str, Any] = {
+        "model_id": model_id or DEFAULT_MODEL_ID,
+        "region_name": os.environ.get("AWS_REGION", "us-west-2"),
+    }
     model = BedrockModel(**model_kwargs)
-    agent = Agent(model=model, tools=[repository_snapshot], system_prompt=SYSTEM_PROMPT)
+    agent = Agent(
+        model=model,
+        tools=[repository_snapshot],
+        system_prompt=SYSTEM_PROMPT,
+        callback_handler=None,
+    )
     prompt = (
-        "Review this PR snapshot. Preserve deterministic findings unless evidence proves they are wrong. "
+        "Call repository_snapshot exactly once, then review only those bounded facts. "
+        "Preserve deterministic findings unless evidence proves they are wrong. "
         "Return JSON only in the form {\"findings\":[{\"kind\":...,\"risk\":...,\"action\":...,"
         "\"documents\":[...],\"reason\":...,\"evidence\":[...],\"human_decision\":...}]} ."
     )
-    result = agent(prompt, structured_output_model=GovernanceOutput)
+    cancel_signal = threading.Event()
+    timeout_seconds = float(os.environ.get("DOCGOV_MODEL_TIMEOUT_SECONDS", DEFAULT_MODEL_TIMEOUT_SECONDS))
+    timer = threading.Timer(timeout_seconds, cancel_signal.set)
+    timer.daemon = True
+    timer.start()
+    try:
+        result = agent(
+            prompt,
+            structured_output_model=GovernanceOutput,
+            cancel_signal=cancel_signal,
+        )
+    finally:
+        timer.cancel()
+    if cancel_signal.is_set():
+        raise TimeoutError(f"Strands model invocation exceeded {timeout_seconds:g} seconds")
     structured = getattr(result, "structured_output", None)
     if structured is not None:
         if hasattr(structured, "model_dump"):
@@ -148,4 +204,16 @@ def govern(snapshot: RepositorySnapshot, mode: str, run_id: str | None = None, e
     baseline = analyze(snapshot, mode=mode, run_id=run_id)
     if not enable_model:
         return baseline
-    return invoke_strands(snapshot, baseline, model_id=model_id)
+    try:
+        return invoke_strands(snapshot, baseline, model_id=model_id)
+    except Exception as exc:
+        return GovernanceDecision(
+            run_id=baseline.run_id,
+            mode=baseline.mode,
+            result="blocked",
+            changed=False,
+            findings=baseline.findings,
+            head_sha=baseline.head_sha,
+            model_used=True,
+            error=f"Strands model failed closed: {exc}",
+        )

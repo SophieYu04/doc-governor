@@ -32,8 +32,12 @@ class Ledger:
     def entries(self) -> list[Dict[str, Any]]:
         if not self.path.exists():
             return []
+        return self.parse(self.path.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def parse(text: str) -> list[Dict[str, Any]]:
         entries: list[Dict[str, Any]] = []
-        for line in self.path.read_text(encoding="utf-8").splitlines():
+        for line in text.splitlines():
             if line.strip():
                 entries.append(json.loads(line))
         return entries

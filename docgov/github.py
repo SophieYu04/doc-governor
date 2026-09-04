@@ -15,9 +15,11 @@ MARKER = "<!-- doc-governor-report -->"
 
 def report_markdown(decision: GovernanceDecision) -> str:
     lines = [MARKER, "## Doc Governor", "", f"**Result:** `{decision.result}`", ""]
-    if not decision.findings:
+    if decision.error:
+        lines.extend([f"**Error:** {decision.error}", ""])
+    if not decision.findings and not decision.error:
         lines.append("No documentation drift was found.")
-    else:
+    elif decision.findings:
         lines.extend(["| Risk | Finding | Action | Documents |", "| --- | --- | --- | --- |"])
         for finding in decision.findings:
             lines.append(

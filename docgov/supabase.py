@@ -43,7 +43,9 @@ def inventory(root: Path) -> Dict[str, Any]:
     migrations_dir = supabase_root / "supabase" / "migrations"
     functions_dir = supabase_root / "supabase" / "functions"
     config = _read(supabase_root / "supabase" / "config.toml")
-    migration_count = len(list(migrations_dir.glob("*.sql"))) if migrations_dir.exists() else 0
+    migration_paths = sorted(migrations_dir.glob("*.sql")) if migrations_dir.exists() else []
+    migration_count = len(migration_paths)
+    migration_text = "\n".join(_read(path) for path in migration_paths)
     source_functions = sorted(
         item.name
         for item in functions_dir.iterdir()
@@ -60,10 +62,28 @@ def inventory(root: Path) -> Dict[str, Any]:
         flag = re.match(r"^verify_jwt\s*=\s*(true|false)", line.strip())
         if current and flag:
             jwt_flags[current] = flag.group(1) == "true"
-    bucket_names = set(re.findall(r"['\"]([a-z0-9-]+)['\"]", "\n".join(
-        _read(path) for path in migrations_dir.glob("*.sql")
-    ))) if migrations_dir.exists() else set()
-    buckets = sorted(bucket_names & {"post-staging", "post-media", "avatars", "security-evidence", "template-kit-media"})
+    rpc_functions = sorted(set(re.findall(
+        r"\bcreate\s+(?:or\s+replace\s+)?function\s+(?:\"?[a-zA-Z_][\w$]*\"?\.)?\"?([a-zA-Z_][\w$]*)\"?\s*\(",
+        migration_text,
+        flags=re.IGNORECASE,
+    )))
+    bucket_names = set(re.findall(
+        r"\binsert\s+into\s+storage\.buckets\b[^;]*?\bvalues\s*\(\s*['\"]([a-z0-9][a-z0-9_-]*)['\"]",
+        migration_text,
+        flags=re.IGNORECASE | re.DOTALL,
+    ))
+    bucket_names.update(re.findall(
+        r"\bbucket_id\s*=\s*['\"]([a-z0-9][a-z0-9_-]*)['\"]",
+        migration_text,
+        flags=re.IGNORECASE,
+    ))
+    function_text = "\n".join(_read(path) for path in functions_dir.glob("*/index.ts")) if functions_dir.exists() else ""
+    bucket_names.update(re.findall(
+        r"\.storage\s*\.\s*from\(\s*['\"]([a-z0-9][a-z0-9_-]*)['\"]\s*\)",
+        function_text,
+        flags=re.IGNORECASE,
+    ))
+    buckets = sorted(bucket_names)
     config_path = supabase_root / "supabase" / "config.toml"
     try:
         config_relative = config_path.relative_to(root).as_posix()
@@ -72,6 +92,7 @@ def inventory(root: Path) -> Dict[str, Any]:
     return {
         "config_path": config_relative if config_path.exists() else None,
         "migration_count": migration_count,
+        "rpc_functions": rpc_functions,
         "source_functions": source_functions,
         "config_functions": config_functions,
         "jwt_flags": jwt_flags,

@@ -6,8 +6,10 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import patch
 from docgov.catalog import Catalog
-from docgov.agent import _json_from_text
+from docgov.agent import MAX_MODEL_CONTEXT_CHARS, _bounded_documents, _json_from_text, govern
+from docgov.cli import _init_catalog
 from docgov.engine import analyze, analyze_trust, apply_safe_actions, build_snapshot, record_baseline
 from docgov.git_tools import content_at_ref
 from docgov.ledger import Ledger
@@ -72,6 +74,79 @@ class EngineTests(unittest.TestCase):
         self.assertIn(".docgov/ledger.jsonl", applied.modified_paths)
         self.assertEqual((self.root / "docs/architecture/API.md").read_text(encoding="utf-8"), canonical)
         self.assertEqual(len(Ledger(self.ledger_path).entries()), 1)
+
+    def test_additive_duplicate_merges_content_and_rewrites_changed_links(self) -> None:
+        canonical = "# API\n\nStable contract.\n"
+        write(self.root / "docs/architecture/API.md", canonical)
+        self.commit("initial")
+        base = git(self.root, "rev-parse", "HEAD")
+        write(self.root / "docs/architecture/API-copy.md", canonical + "\nNew endpoint.\n")
+        write(self.root / "docs/architecture/INDEX.md", "[API copy](API-copy.md)\n")
+        head = self.commit("agent documentation")
+
+        snapshot = build_snapshot(self.root, self.catalog_path, base, head)
+        decision = analyze(snapshot)
+        applied = apply_safe_actions(snapshot, decision, self.catalog_path, self.ledger_path)
+
+        self.assertEqual(applied.result, "changed")
+        self.assertFalse((self.root / "docs/architecture/API-copy.md").exists())
+        self.assertIn("New endpoint.", (self.root / "docs/architecture/API.md").read_text(encoding="utf-8"))
+        self.assertEqual(
+            (self.root / "docs/architecture/INDEX.md").read_text(encoding="utf-8"),
+            "[API copy](API.md)\n",
+        )
+        actions = [entry["action"] for entry in Ledger(self.ledger_path).entries()]
+        self.assertIn("update", actions)
+        self.assertIn("update_link", actions)
+        self.assertIn("remove_new_duplicate", actions)
+
+    def test_duplicate_batch_is_atomic_when_one_merge_is_unsafe(self) -> None:
+        write(self.root / "docs/architecture/API.md", "# API\n")
+        write(self.root / "docs/architecture/AUTH.md", "# Auth\n")
+        self.commit("canonical")
+        base = git(self.root, "rev-parse", "HEAD")
+        write(self.root / "docs/architecture/API-copy.md", "# API\n")
+        write(self.root / "docs/architecture/AUTH-copy.md", "# Different\n")
+        head = self.commit("duplicates")
+        snapshot = build_snapshot(self.root, self.catalog_path, base, head)
+        decision = GovernanceDecision(
+            run_id="atomic",
+            mode="review",
+            result="changed",
+            changed=False,
+            findings=[
+                Finding("duplicate", "low", "merge_new_file", ["docs/architecture/API-copy.md", "docs/architecture/API.md"], "exact"),
+                Finding("duplicate", "low", "merge_new_file", ["docs/architecture/AUTH-copy.md", "docs/architecture/AUTH.md"], "unsafe"),
+            ],
+        )
+        applied = apply_safe_actions(snapshot, decision, self.catalog_path, self.ledger_path)
+        self.assertEqual(applied.result, "action_required")
+        self.assertTrue((self.root / "docs/architecture/API-copy.md").exists())
+        self.assertFalse(self.ledger_path.exists())
+
+    def test_safe_correction_is_applied_while_unrelated_finding_still_blocks(self) -> None:
+        write(self.root / "docs/architecture/API.md", "# API\n")
+        self.commit("canonical")
+        base = git(self.root, "rev-parse", "HEAD")
+        write(self.root / "docs/architecture/API-copy.md", "# API\n")
+        write(self.root / "docs/status/PRODUCTION.md", "# Production\n")
+        head = self.commit("mixed PR")
+        snapshot = build_snapshot(self.root, self.catalog_path, base, head)
+        decision = GovernanceDecision(
+            run_id="mixed",
+            mode="review",
+            result="action_required",
+            changed=False,
+            findings=[
+                Finding("duplicate", "low", "merge_new_file", ["docs/architecture/API-copy.md", "docs/architecture/API.md"], "safe"),
+                Finding("conflict", "high", "block", ["docs/status/PRODUCTION.md"], "human decision"),
+            ],
+        )
+        applied = apply_safe_actions(snapshot, decision, self.catalog_path, self.ledger_path)
+        self.assertTrue(applied.changed)
+        self.assertEqual(applied.result, "action_required")
+        self.assertFalse((self.root / "docs/architecture/API-copy.md").exists())
+        self.assertTrue((self.root / "docs/status/PRODUCTION.md").exists())
 
     def test_date_change_without_evidence_is_blocked(self) -> None:
         write(self.root / "docs/architecture/API.md", "# API\n\n最後驗證：2026-09-01\n")
@@ -162,13 +237,19 @@ verify_jwt = false
 """)
         write(self.root / "supabase/functions/health-check/index.ts", "export default {};\n")
         write(self.root / "supabase/functions/cron-task/index.ts", "export default {};\n")
-        write(self.root / "supabase/migrations/001.sql", "insert into storage.buckets (id) values ('post-media');\n")
+        write(self.root / "supabase/migrations/001.sql", """
+create or replace function public.profile_summary(user_id uuid)
+returns json language sql as $$ select '{}'::json $$;
+insert into storage.buckets (id) values ('post-media');
+create policy media_read on storage.objects using (bucket_id = 'avatars');
+""")
         write(self.root / "docs/architecture/API.md", '<!-- docgov:supabase-inventory {"functions":["health-check"]} -->\n')
         result = inventory(self.root)
         self.assertEqual(result["source_functions"], ["cron-task", "health-check"])
         self.assertEqual(result["config_functions"], ["cron-task", "health-check"])
         self.assertEqual(result["jwt_flags"], {"cron-task": False, "health-check": True})
-        self.assertEqual(result["storage_buckets"], ["post-media"])
+        self.assertEqual(result["rpc_functions"], ["profile_summary"])
+        self.assertEqual(result["storage_buckets"], ["avatars", "post-media"])
         self.assertEqual(result["document_markers"]["docs/architecture/API.md"]["functions"], ["health-check"])
 
     def test_supabase_source_config_mismatch_is_blocked(self) -> None:
@@ -179,6 +260,52 @@ verify_jwt = false
         decision = analyze(build_snapshot(self.root, self.catalog_path), mode="verify")
         self.assertEqual(decision.result, "action_required")
         self.assertTrue(any(item.kind == "conflict" for item in decision.findings))
+
+    def test_supabase_edge_function_updates_governed_inventory_markers(self) -> None:
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        catalog["documents"] = [
+            {
+                "path": "docs/architecture/API.md",
+                "type": "contract",
+                "status": "current",
+                "depends_on": ["supabase/functions/**", "supabase/config.toml"],
+            },
+            {
+                "path": "docs/architecture/EDGE_FUNCTIONS.md",
+                "type": "contract",
+                "status": "current",
+                "depends_on": ["supabase/functions/**", "supabase/config.toml"],
+            },
+        ]
+        write(self.catalog_path, json.dumps(catalog))
+        marker = '<!-- docgov:supabase-inventory {"functions":["health-check"],"jwt_flags":{"health-check":true}} -->\n'
+        write(self.root / "docs/architecture/API.md", "# API\n\n" + marker)
+        write(self.root / "docs/architecture/EDGE_FUNCTIONS.md", "# Edge\n\n" + marker)
+        write(self.root / "supabase/functions/health-check/index.ts", "export default {};\n")
+        write(self.root / "supabase/config.toml", "[functions.health-check]\nverify_jwt = true\n")
+        self.commit("initial inventory")
+        base = git(self.root, "rev-parse", "HEAD")
+        write(self.root / "supabase/functions/send-email/index.ts", "export default {};\n")
+        write(
+            self.root / "supabase/config.toml",
+            "[functions.health-check]\nverify_jwt = true\n\n[functions.send-email]\nverify_jwt = false\n",
+        )
+        head = self.commit("add edge function")
+
+        snapshot = build_snapshot(self.root, self.catalog_path, base, head, ledger_path=self.ledger_path)
+        decision = analyze(snapshot)
+        self.assertEqual(
+            {finding.documents[0] for finding in decision.findings if finding.action == "update"},
+            {"docs/architecture/API.md", "docs/architecture/EDGE_FUNCTIONS.md"},
+        )
+        applied = apply_safe_actions(snapshot, decision, self.catalog_path, self.ledger_path)
+        self.assertEqual(applied.result, "changed")
+        for document in ("docs/architecture/API.md", "docs/architecture/EDGE_FUNCTIONS.md"):
+            content = (self.root / document).read_text(encoding="utf-8")
+            self.assertIn('"functions":["health-check","send-email"]', content)
+            self.assertIn('"send-email":false', content)
+            baseline = Ledger(self.ledger_path).latest_for(document, "verify_current")
+            self.assertEqual(baseline["verifier"], "supabase_inventory")
 
     def test_nested_supabase_inventory_reports_relative_config_path(self) -> None:
         write(self.root / "examples/demo/supabase/config.toml", "[functions.health-check]\nverify_jwt = true\n")
@@ -347,9 +474,58 @@ verify_jwt = false
         self.assertEqual(decision.result, "action_required")
         self.assertIn("misclassified", [item.kind for item in decision.findings])
 
+    def test_catalog_rejects_a_sixth_core_type(self) -> None:
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        catalog["taxonomy"]["note"] = ["notes/**"]
+        write(self.catalog_path, json.dumps(catalog))
+        with self.assertRaisesRegex(ValueError, "Unsupported document type"):
+            Catalog.load(self.catalog_path)
+
+    def test_init_proposes_every_tracked_markdown_as_review_required(self) -> None:
+        write(self.root / "README.md", "# Root\n")
+        write(self.root / "docs/operations/RUNBOOK.md", "# Runbook\n")
+        write(self.root / "loose-notes.md", "# Notes\n")
+        self.commit("existing docs")
+        proposal = _init_catalog(self.root, self.catalog_path)
+        records = {item["path"]: item for item in proposal["documents"]}
+        self.assertEqual(set(records), {"README.md", "docs/operations/RUNBOOK.md", "loose-notes.md"})
+        self.assertEqual(records["README.md"]["type"], "contract")
+        self.assertEqual(records["docs/operations/RUNBOOK.md"]["type"], "procedure")
+        self.assertTrue(all(item["status"] == "review_required" for item in records.values()))
+
     def test_invalid_model_payload_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
             _json_from_text('{"findings": "not-an-array"}')
+
+    def test_model_failure_is_blocked_without_mutation(self) -> None:
+        write(self.root / "docs/architecture/API.md", "# API\n")
+        self.commit("canonical")
+        snapshot = build_snapshot(self.root, self.catalog_path, ledger_path=self.ledger_path)
+        with patch("docgov.agent.invoke_strands", side_effect=TimeoutError("timed out")):
+            decision = govern(snapshot, mode="review", enable_model=True)
+        self.assertEqual(decision.result, "blocked")
+        self.assertFalse(decision.changed)
+        self.assertIn("failed closed", decision.error)
+        self.assertFalse(self.ledger_path.exists())
+
+    def test_model_receives_only_bounded_relevant_markdown(self) -> None:
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        catalog["documents"] = [
+            {"path": "docs/architecture/API.md", "type": "contract"},
+            {"path": "docs/architecture/OTHER.md", "type": "contract"},
+            {"path": "docs/status/RELEASE.md", "type": "state"},
+        ]
+        write(self.catalog_path, json.dumps(catalog))
+        write(self.root / "docs/architecture/API.md", "A" * (MAX_MODEL_CONTEXT_CHARS * 2))
+        write(self.root / "docs/architecture/OTHER.md", "# Related\n")
+        write(self.root / "docs/status/RELEASE.md", "# Unrelated\n")
+        base = self.commit("documents")
+        write(self.root / "docs/architecture/API.md", "B" * (MAX_MODEL_CONTEXT_CHARS * 2))
+        head = self.commit("change API")
+        documents = _bounded_documents(build_snapshot(self.root, self.catalog_path, base, head))
+        self.assertIn("docs/architecture/API.md", documents)
+        self.assertNotIn("docs/status/RELEASE.md", documents)
+        self.assertLessEqual(sum(len(value) for value in documents.values()), MAX_MODEL_CONTEXT_CHARS)
 
     def test_model_finding_cannot_remove_outside_new_markdown_boundary(self) -> None:
         write(self.root / "docs/architecture/API.md", "# API\n")
@@ -538,11 +714,15 @@ verify_jwt = false
         catalog["policies"]["require_verification_ledger"] = True
         write(self.catalog_path, json.dumps(catalog))
         write(self.root / "docs/architecture/API.md", "# Canonical API\n")
-        canonical_sha = self.commit("canonical docs")
+        self.commit("canonical docs")
         canonical_snapshot = build_snapshot(self.root, self.catalog_path, ledger_path=self.ledger_path)
         record_baseline(canonical_snapshot, self.ledger_path, approved=True)
+        canonical_sha = self.commit("canonical verification ledger")
         subprocess.run(["git", "checkout", "-qb", "candidate"], cwd=self.root, check=True)
         write(self.root / "docs/architecture/API.md", "# Stale candidate API\n")
+        candidate_catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        candidate_catalog["documents"] = []
+        write(self.catalog_path, json.dumps(candidate_catalog))
         self.commit("stale candidate docs")
 
         candidate = analyze_trust(

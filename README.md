@@ -14,7 +14,7 @@ Coding agents are excellent at producing text and poor at maintaining a small se
 | `evidence` | Immutable, dated, and never overwritten. |
 | `decision` | Superseded by a newer decision instead of silently deleted. |
 
-The agent creates a correction commit on the pull request branch for safe changes. It blocks ambiguous, destructive, legal, public-copy, and unsupported-state changes and leaves a decision card in the pull request. A maintainer adds the `docgov-approved` label to authorize a one-time rerun for the current commit.
+The agent creates a correction commit on the pull request branch for safe changes, even when a separate high-risk finding still blocks the pull request. It blocks ambiguous, destructive, legal, public-copy, and unsupported-state changes and leaves a decision card in the pull request. A maintainer adds the `docgov-approved` label to authorize a one-time rerun for the current commit.
 
 The model is reserved for semantic classification and ambiguity. Hashes, dependency matching, TTL checks, path boundaries, trust decisions, and ledger writes are deterministic and can run without AWS.
 
@@ -50,7 +50,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-3. Configure the role trust policy for GitHub OIDC and grant only `bedrock:InvokeModel` for the chosen model, then enable the guarded Bedrock step in the copied workflow.
+3. Create a least-privilege AWS role from `infra/aws/github-oidc-trust-policy.json` and `infra/aws/bedrock-inference-policy.json`, substitute the AWS account ID, and set its ARN as the repository variable `DOCGOV_AWS_ROLE_ARN`. The workflow exchanges GitHub OIDC for short-lived credentials only on same-repository pull requests; forks remain deterministic and receive no AWS identity.
 4. Run `docgov init` once and review the generated Catalog proposal.
 
 Fork pull requests run in read-only mode. Never use `pull_request_target` to execute untrusted pull request code or expose repository secrets.
@@ -116,12 +116,19 @@ flowchart LR
 
 ## Demo
 
-Open a pull request that changes `examples/supabase-demo/supabase/config.toml` and adds a second copy of `docs/architecture/EDGE_FUNCTIONS.md` under the demo directory. The action should remove the newly added duplicate, mark unsupported status claims for review, and report the source evidence in the PR comment. A scheduled audit demonstrates TTL expiry without a code change.
+Run the complete deterministic scenario locally:
+
+```sh
+python scripts/demo.py
+```
+
+The fixture simulates a coding agent adding an Edge Function, creating a duplicate API document, refreshing a State date without evidence, and changing protected public copy. Doc Governor synchronizes the source-backed API and Edge inventory, removes the duplicate, preserves the protected file, and returns `action_required` for the two human decisions. Use `--keep` to inspect the temporary repository. A scheduled audit demonstrates TTL expiry without a code change.
 
 ## Development and tests
 
 ```sh
-python -m unittest discover -v
+python -m pytest -q
+python scripts/demo.py
 python -m docgov --json verify
 ```
 

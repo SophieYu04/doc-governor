@@ -7,3 +7,5 @@ Last verified: 2026-09-03
 | Function | JWT | Method |
 | --- | --- | --- |
 | `health-check` | true | GET |
+
+<!-- docgov:supabase-inventory {"functions":["health-check"],"jwt_flags":{"health-check":true}} -->

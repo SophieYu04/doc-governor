@@ -30,7 +30,9 @@ class Catalog:
             DocumentRecord.from_dict(item) for item in data.get("documents", [])
         ]
         self.policies: Dict[str, Any] = dict(data.get("policies", {}))
-        unsupported = sorted({record.type for record in self.documents} - CORE_TYPES)
+        unsupported = sorted(
+            (set(self.taxonomy) | {record.type for record in self.documents}) - CORE_TYPES
+        )
         if unsupported:
             raise ValueError(f"Unsupported document type(s): {', '.join(unsupported)}")
 
@@ -64,13 +66,16 @@ class Catalog:
     def load(cls, path: Path) -> "Catalog":
         if not path.exists():
             return cls.default()
-        text = path.read_text(encoding="utf-8")
+        return cls.loads(path.read_text(encoding="utf-8"), source=str(path))
+
+    @classmethod
+    def loads(cls, text: str, *, source: str = "catalog") -> "Catalog":
         if yaml is not None:
             parsed = yaml.safe_load(text)
         else:
             parsed = json.loads(text)
         if not isinstance(parsed, dict):
-            raise ValueError(f"Catalog must be a mapping: {path}")
+            raise ValueError(f"Catalog must be a mapping: {source}")
         return cls(parsed)
 
     def to_dict(self) -> Dict[str, Any]:

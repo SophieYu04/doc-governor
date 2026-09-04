@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 from .agent import govern
 from .catalog import Catalog
 from .engine import analyze_trust, apply_safe_actions, build_snapshot, record_baseline
+from .git_tools import tracked_paths
 from .ledger import utc_now
 from .models import DocumentRecord, GovernanceDecision
 
@@ -24,16 +25,35 @@ def _ledger_path(root: Path, value: str | None) -> Path:
 
 def _init_catalog(root: Path, path: Path) -> Dict[str, Any]:
     catalog = Catalog.default()
-    for markdown in root.rglob("*.md"):
-        relative = markdown.relative_to(root).as_posix()
-        if any(part.startswith(".") for part in Path(relative).parts):
+    markdown_paths = tracked_paths(root, suffix=".md")
+    if not markdown_paths:
+        markdown_paths = [path.relative_to(root).as_posix() for path in root.rglob("*.md")]
+    for relative in sorted(set(markdown_paths)):
+        parts = Path(relative).parts
+        if any(part in {".git", ".venv", "node_modules", "vendor"} for part in parts):
             continue
-        if relative.startswith((".git/", ".venv/")):
-            continue
-        document_type = catalog.classify(relative)
-        if document_type:
-            catalog.documents.append(DocumentRecord(path=relative, type=document_type))
+        document_type = catalog.classify(relative) or _suggest_type(relative)
+        catalog.documents.append(DocumentRecord(
+            path=relative,
+            type=document_type,
+            status="review_required",
+            approval="human",
+        ))
     return catalog.to_dict()
+
+
+def _suggest_type(relative_path: str) -> str:
+    value = relative_path.lower()
+    name = Path(value).name
+    if "/evidence/" in f"/{value}" or "evidence" in name:
+        return "evidence"
+    if "/decisions/" in f"/{value}" or "/adr/" in f"/{value}" or name.startswith("adr-"):
+        return "decision"
+    if any(token in value for token in ("/status/", "current_release", "release_state")):
+        return "state"
+    if any(token in value for token in ("/operations/", "runbook", "playbook", "checklist", "testing", "setup")):
+        return "procedure"
+    return "contract"
 
 
 def _print(decision: GovernanceDecision, as_json: bool) -> None:
@@ -109,9 +129,10 @@ def main(argv: List[str] | None = None) -> int:
                 Catalog(value).save(catalog_path)
                 changed = True
         print(json.dumps({
-            "result": "changed" if changed else ("proposal" if not args.apply else "pass"),
+            "result": "changed" if changed else "pass",
             "changed": changed,
             "finding_count": 0,
+            "proposal_only": not args.apply,
             "catalog": value,
         }, ensure_ascii=False, sort_keys=True))
         return 0
