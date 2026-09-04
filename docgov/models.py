@@ -38,7 +38,11 @@ class DocumentRecord:
             depends_on=[str(item) for item in value.get("depends_on", [])],
             ttl_days=value.get("ttl_days"),
             approval=str(value.get("approval", "auto")),
-            last_verified_at=value.get("last_verified_at"),
+            last_verified_at=(
+                str(value["last_verified_at"])
+                if value.get("last_verified_at") is not None
+                else None
+            ),
             authority=str(value.get("authority", "canonical")),
             canonical_key=value.get("canonical_key"),
         )

@@ -103,6 +103,30 @@ class EngineTests(unittest.TestCase):
         self.assertIn("previous_hash", entry)
         self.assertIn("new_hash", entry)
 
+    def test_yaml_timestamp_is_normalized_for_ttl_checks(self) -> None:
+        write(
+            self.catalog_path,
+            """version: 1
+documents:
+  - path: docs/status/RELEASE.md
+    type: state
+    last_verified_at: 2026-09-03T00:00:00Z
+    ttl_days: 7
+""",
+        )
+        write(self.root / "docs/status/RELEASE.md", "# Release\n")
+        self.commit("state with YAML timestamp")
+
+        record = Catalog.load(self.catalog_path).record_for("docs/status/RELEASE.md")
+        self.assertIsInstance(record.last_verified_at, str)
+        decision = analyze_trust(
+            build_snapshot(self.root, self.catalog_path),
+            self.ledger_path,
+            now=datetime(2026, 9, 5, tzinfo=timezone.utc),
+        )
+        self.assertEqual(decision.result, "action_required")
+        self.assertNotIn("passed its 7-day", " ".join(item.reason for item in decision.findings))
+
     def test_conflicting_canonical_documents_are_not_deleted(self) -> None:
         catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
         catalog["documents"] = [
