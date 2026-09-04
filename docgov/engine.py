@@ -225,6 +225,20 @@ def dependency_fingerprint(evidence: Iterable[Evidence]) -> str:
     return digest.hexdigest()
 
 
+def dependency_summary(record: DocumentRecord, evidence: Iterable[Evidence]) -> List[Evidence]:
+    items = list(evidence)
+    summaries: List[Evidence] = []
+    for pattern in record.depends_on:
+        matched = [item for item in items if fnmatch.fnmatch(item.path, pattern)]
+        summaries.append(Evidence(
+            path=pattern,
+            kind="dependency_fingerprint",
+            sha256=dependency_fingerprint(matched),
+            detail=f"{len(matched)} file(s)",
+        ))
+    return summaries
+
+
 def verification_record(snapshot: RepositorySnapshot, record: DocumentRecord) -> Dict[str, object]:
     dependencies = dependency_evidence(snapshot, record)
     document_content = snapshot.files.get(record.path)
@@ -232,7 +246,8 @@ def verification_record(snapshot: RepositorySnapshot, record: DocumentRecord) ->
         "document": record.path,
         "action": "verify_current",
         "reason": "Recorded an evidence-backed documentation baseline.",
-        "evidence": dependencies,
+        "evidence": dependency_summary(record, dependencies),
+        "dependency_count": len(dependencies),
         "new_hash": sha256_text(document_content) if document_content is not None else None,
         "dependency_fingerprint": dependency_fingerprint(dependencies),
     }
@@ -291,42 +306,43 @@ def analyze_trust(
 
         scope, reason = _status_scope(record)
         dependencies = dependency_evidence(snapshot, record)
+        summarized = dependency_summary(record, dependencies)
         if normalized in controls:
             trust_results.append(TrustResult(
                 normalized, record.type, record.status, "current_fact",
-                "Governance control document is readable so the trust gate can bootstrap.", dependencies,
+                "Governance control document is readable so the trust gate can bootstrap.", summarized,
             ))
             continue
         if scope == "untrusted":
-            trust_results.append(TrustResult(normalized, record.type, record.status, scope, reason, dependencies))
-            findings.append(Finding("stale", "high", "block", [normalized], reason, dependencies))
+            trust_results.append(TrustResult(normalized, record.type, record.status, scope, reason, summarized))
+            findings.append(Finding("stale", "high", "block", [normalized], reason, summarized))
             continue
         if record.type in {"state", "procedure"} and expired(record, snapshot.catalog, now=now):
             reason = f"The {record.type} document has passed its {snapshot.catalog.ttl_for(record)}-day verification window."
-            trust_results.append(TrustResult(normalized, record.type, record.status, "untrusted", reason, dependencies))
-            findings.append(Finding("stale", "high", "block", [normalized], reason, dependencies))
+            trust_results.append(TrustResult(normalized, record.type, record.status, "untrusted", reason, summarized))
+            findings.append(Finding("stale", "high", "block", [normalized], reason, summarized))
             continue
 
         baseline = ledger.latest_for(normalized, "verify_current")
         if require_ledger and baseline is None:
             reason = "No successful verification baseline exists in the append-only ledger."
-            trust_results.append(TrustResult(normalized, record.type, record.status, "untrusted", reason, dependencies))
-            findings.append(Finding("stale", "high", "block", [normalized], reason, dependencies))
+            trust_results.append(TrustResult(normalized, record.type, record.status, "untrusted", reason, summarized))
+            findings.append(Finding("stale", "high", "block", [normalized], reason, summarized))
             continue
         if baseline is not None:
             current_hash = sha256_text(snapshot.files[normalized])
             current_fingerprint = dependency_fingerprint(dependencies)
             if baseline.get("new_hash") != current_hash:
                 reason = "Document content changed after its latest successful verification."
-                trust_results.append(TrustResult(normalized, record.type, record.status, "untrusted", reason, dependencies))
-                findings.append(Finding("unverified_date", "high", "block", [normalized], reason, dependencies))
+                trust_results.append(TrustResult(normalized, record.type, record.status, "untrusted", reason, summarized))
+                findings.append(Finding("unverified_date", "high", "block", [normalized], reason, summarized))
                 continue
             if baseline.get("dependency_fingerprint") != current_fingerprint:
                 reason = "A declared dependency changed after the document was verified."
-                trust_results.append(TrustResult(normalized, record.type, record.status, "untrusted", reason, dependencies))
-                findings.append(Finding("stale", "high", "block", [normalized], reason, dependencies))
+                trust_results.append(TrustResult(normalized, record.type, record.status, "untrusted", reason, summarized))
+                findings.append(Finding("stale", "high", "block", [normalized], reason, summarized))
                 continue
-        trust_results.append(TrustResult(normalized, record.type, record.status, scope, reason, dependencies))
+        trust_results.append(TrustResult(normalized, record.type, record.status, scope, reason, summarized))
 
     conflicts = snapshot.catalog.duplicate_canonical_records()
     for key, records in conflicts.items():
@@ -387,7 +403,7 @@ def record_baseline(
         if scope == "untrusted":
             continue
         event = verification_record(snapshot, record)
-        if record.type == "state" and not event["evidence"]:
+        if record.type == "state" and not event["dependency_count"]:
             findings.append(Finding(
                 "unverified_date", "high", "block", [record.path],
                 "A State baseline requires read-only source or evidence dependencies.",

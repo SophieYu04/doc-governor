@@ -365,6 +365,10 @@ verify_jwt = false
         baseline = record_baseline(snapshot, self.ledger_path, approved=True)
         self.assertEqual(baseline.result, "changed")
         self.assertEqual(analyze_trust(snapshot, self.ledger_path).result, "pass")
+        ledger_entry = Ledger(self.ledger_path).latest_for("docs/architecture/API.md", "verify_current")
+        self.assertEqual(len(ledger_entry["evidence"]), 1)
+        self.assertEqual(ledger_entry["evidence"][0]["path"], "src/**")
+        self.assertEqual(ledger_entry["evidence"][0]["detail"], "1 file(s)")
 
         write(self.root / "src/api.txt", "v2\n")
         drifted = analyze_trust(
