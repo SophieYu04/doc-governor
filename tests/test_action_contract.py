@@ -28,6 +28,9 @@ class ActionContractTests(unittest.TestCase):
         self.assertIn('json.load(handle).get("modified_paths", [])', source)
         self.assertNotIn("git add .", source)
         self.assertIn('if [ "$result" = "action_required" ] || [ "$result" = "blocked" ]', source)
+        self.assertIn("supabase_projects", action["inputs"])
+        self.assertIn("supabase_evidence_dir", action["inputs"])
+        self.assertIn('--supabase-projects "$DOCGOV_SUPABASE_PROJECTS"', source)
 
     def test_workflows_pin_actions_and_never_use_pull_request_target(self) -> None:
         workflow_sources = [path.read_text(encoding="utf-8") for path in (ROOT / ".github/workflows").glob("*.yml")]

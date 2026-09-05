@@ -13,6 +13,12 @@ from .engine import analyze_trust, apply_safe_actions, build_snapshot, record_ba
 from .git_tools import tracked_paths
 from .ledger import utc_now
 from .models import DocumentRecord, GovernanceDecision
+from .supabase_remote import (
+    DEFAULT_EVIDENCE_DIR,
+    SupabaseAdvisorError,
+    collect_advisor_evidence,
+    parse_projects,
+)
 
 
 def _catalog_path(root: Path, value: str | None) -> Path:
@@ -101,6 +107,29 @@ def main(argv: List[str] | None = None) -> int:
         )
         command_parser.add_argument("--model-id", default=os.environ.get("DOCGOV_MODEL_ID"))
 
+    audit_parser = subparsers.choices["audit"]
+    audit_parser.add_argument(
+        "--supabase-projects",
+        default=None,
+        help="Comma or newline separated environment=project_ref pairs for read-only Advisor evidence",
+    )
+    audit_parser.add_argument(
+        "--supabase-evidence-dir",
+        default=DEFAULT_EVIDENCE_DIR,
+        help="Repository-relative immutable evidence destination",
+    )
+    audit_parser.add_argument(
+        "--supabase-api-base",
+        default=os.environ.get("DOCGOV_SUPABASE_API_BASE", "https://api.supabase.com"),
+        help=argparse.SUPPRESS,
+    )
+    audit_parser.add_argument(
+        "--supabase-timeout-seconds",
+        type=float,
+        default=20,
+        help="Timeout for each read-only Supabase Advisor request",
+    )
+
     verify_parser = subparsers.choices["verify"]
     verify_parser.add_argument("--strict", action="store_true")
     verify_parser.add_argument("--ref", default=None, help="Read governed content from this Git ref")
@@ -140,6 +169,43 @@ def main(argv: List[str] | None = None) -> int:
     mode = "review" if args.command == "review" else "audit"
     if args.command == "verify":
         mode = "review"
+    remote_evidence_paths: List[str] = []
+    if args.command == "audit" and args.supabase_projects:
+        if not args.apply:
+            decision = GovernanceDecision(
+                run_id="unknown-audit",
+                mode="audit",
+                result="blocked",
+                changed=False,
+                error="Read-only Supabase Advisor collection requires --apply to persist immutable evidence.",
+            )
+            _print(decision, args.as_json)
+            return _exit_code(decision)
+        try:
+            # Validate the governance controls before making any evidence write.
+            Catalog.load(catalog_path)
+            projects = parse_projects(args.supabase_projects)
+            writes = collect_advisor_evidence(
+                root,
+                projects,
+                os.environ.get("SUPABASE_ACCESS_TOKEN", ""),
+                output_dir=args.supabase_evidence_dir,
+                api_base=args.supabase_api_base,
+                timeout_seconds=args.supabase_timeout_seconds,
+            )
+            remote_evidence_paths = [
+                item.path for item in writes if item.changed and item.path is not None
+            ]
+        except (SupabaseAdvisorError, OSError, ValueError) as exc:
+            decision = GovernanceDecision(
+                run_id="unknown-audit",
+                mode="audit",
+                result="blocked",
+                changed=False,
+                error=f"Supabase Advisor evidence collection failed closed: {exc}",
+            )
+            _print(decision, args.as_json)
+            return _exit_code(decision)
     try:
         snapshot = build_snapshot(
             root,
@@ -203,6 +269,11 @@ def main(argv: List[str] | None = None) -> int:
             ledger_path,
             approved=args.approved,
         )
+    if remote_evidence_paths:
+        decision.changed = True
+        decision.modified_paths = sorted(set(decision.modified_paths) | set(remote_evidence_paths))
+        if decision.result == "pass":
+            decision.result = "changed"
     _print(decision, args.as_json)
     return _exit_code(decision)
 

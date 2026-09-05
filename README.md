@@ -16,7 +16,7 @@ Coding agents are excellent at producing text and poor at maintaining a small se
 
 The agent creates a correction commit on the pull request branch for safe changes, even when a separate high-risk finding still blocks the pull request. It blocks ambiguous, destructive, legal, public-copy, and unsupported-state changes and leaves a decision card in the pull request. A maintainer adds the `docgov-approved` label to authorize a one-time rerun for the current commit.
 
-The model is reserved for semantic classification and ambiguity. Hashes, dependency matching, TTL checks, path boundaries, trust decisions, and ledger writes are deterministic and can run without AWS.
+The model is reserved for semantic classification and ambiguity. Hashes, dependency matching, TTL checks, path boundaries, trust decisions, Supabase Advisor evidence, and ledger writes are deterministic and can run without AWS.
 
 ## Quick start
 
@@ -38,7 +38,7 @@ jobs:
   govern:
     runs-on: ubuntu-latest
     steps:
-      - uses: SophieYu04/doc-governor@v0.1.0
+      - uses: SophieYu04/doc-governor@v0.2.0
         with:
           mode: review
           base_sha: ${{ github.event.pull_request.base.sha }}
@@ -67,6 +67,8 @@ python -m pip install -e '.[dev]'
 docgov init
 docgov review --base BASE_SHA --head HEAD_SHA
 docgov audit
+SUPABASE_ACCESS_TOKEN=... docgov audit --apply \
+  --supabase-projects 'staging=PROJECT_REF,production=PROJECT_REF'
 docgov verify
 docgov verify --strict docs/architecture/API.md
 ```
@@ -81,6 +83,28 @@ docgov verify --strict
 ```
 
 The baseline command writes only `.docgov/ledger.jsonl`. Future source changes invalidate the matching document until it is updated and verified again. Set `DOCGOV_ENABLE_MODEL=1`, pass `--enable-model`, and install `.[bedrock]` only when semantic classification and duplicate reasoning are needed.
+
+### Read-only Supabase Advisor evidence
+
+Audit mode can fetch the Security and Performance Advisor through Supabase Management API `GET` endpoints. Use a fine-grained token with only `advisors_read`, store it as `SUPABASE_ACCESS_TOKEN`, and pass named project refs through `--supabase-projects`.
+
+The collector writes an immutable JSON snapshot only when an environment's Advisor fingerprint changes. Snapshots contain counts, lint names, and one-way hashes; entity names, metadata, cache keys, descriptions, details, project refs, and raw responses are not stored. Fetching every configured environment must succeed before any evidence file is written.
+
+Register the evidence directory as an `evidence` taxonomy path and add it to each affected document's `depends_on` list:
+
+```yaml
+taxonomy:
+  evidence:
+    - docs/security-evidence/**
+
+documents:
+  - path: docs/status/RELEASE.md
+    type: state
+    depends_on:
+      - docs/security-evidence/supabase-advisors/**
+```
+
+When a new snapshot appears, the same audit treats it as source evidence and marks dependent State, Contract, or Procedure documents stale. A maintenance pull request then contains the immutable snapshot, Catalog status change, and append-only ledger record. Unchanged Advisor results create no commit or pull-request noise.
 
 Repositories with a separate canonical documentation branch can check its tree without switching branches:
 
@@ -98,13 +122,14 @@ The strict scan considers only Git-tracked Markdown. Generated output, dependenc
 - `examples/supabase-demo/`: a small fixture that demonstrates Edge Function and status-document drift.
 - `.github/workflows/`: pull request, daily audit, and initial Catalog proposal workflows.
 
-Supabase Markdown may include a machine-readable marker such as `<!-- docgov:supabase-inventory {"functions":["health-check"]} -->`; the adapter exposes these markers to the verifier and Governor without treating them as a second source of truth.
+Supabase Markdown may include a machine-readable marker such as `<!-- docgov:supabase-inventory {"functions":["health-check"]} -->`; the source adapter exposes these markers to the verifier and Governor without treating them as a second source of truth. The remote adapter is separate and read-only: it records sanitized Advisor state but never executes SQL, deploys functions, or changes a Supabase project.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  A["GitHub PR"] --> B["Doc Governor Action"]
+  A["GitHub PR or daily schedule"] --> B["Doc Governor Action"]
+  S["Supabase Advisor GET"] -->|"redacted immutable evidence"| B
   B --> C["Inventory tools"]
   C --> D["Strands Governor"]
   D --> E["Verifier + policy"]

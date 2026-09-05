@@ -73,7 +73,23 @@ def content_at_ref(root: Path, ref: str, relative_path: str) -> Optional[str]:
 
 def changed_paths(root: Path, base: str | None, head: str | None) -> Tuple[List[str], List[str]]:
     if not base or not head:
-        return [], []
+        try:
+            output = run_git(root, "status", "--porcelain=v1", "--untracked-files=all")
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return [], []
+        changed: List[str] = []
+        added: List[str] = []
+        for line in output.splitlines():
+            if len(line) < 4:
+                continue
+            status = line[:2]
+            path = line[3:]
+            if " -> " in path:
+                path = path.split(" -> ", 1)[1]
+            changed.append(path)
+            if status == "??" or "A" in status:
+                added.append(path)
+        return sorted(set(changed)), sorted(set(added))
     try:
         output = run_git(root, "diff", "--name-status", base, head)
     except (subprocess.CalledProcessError, FileNotFoundError):

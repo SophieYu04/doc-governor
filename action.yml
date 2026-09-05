@@ -50,6 +50,14 @@ inputs:
     description: Fail closed if the Strands invocation exceeds this duration
     required: false
     default: "60"
+  supabase_projects:
+    description: Comma or newline separated environment=project_ref pairs for audit-mode Advisor evidence
+    required: false
+    default: ""
+  supabase_evidence_dir:
+    description: Repository-relative directory for immutable redacted Supabase Advisor evidence
+    required: false
+    default: docs/security-evidence/supabase-advisors
 outputs:
   result:
     description: pass, changed, action_required, or blocked
@@ -98,6 +106,8 @@ runs:
         DOCGOV_ENABLE_MODEL: ${{ inputs.enable_model }}
         DOCGOV_MODEL_ID: ${{ inputs.model_id }}
         DOCGOV_MODEL_TIMEOUT_SECONDS: ${{ inputs.model_timeout_seconds }}
+        DOCGOV_SUPABASE_PROJECTS: ${{ inputs.supabase_projects }}
+        DOCGOV_SUPABASE_EVIDENCE_DIR: ${{ inputs.supabase_evidence_dir }}
         AWS_REGION: ${{ inputs.aws_region }}
       run: |
         set +e
@@ -112,6 +122,10 @@ runs:
           if [ "$DOCGOV_APPLY" = "true" ]; then args+=(--apply); fi
           if [ "$DOCGOV_APPROVED" = "true" ]; then args+=(--approved); fi
           if [ "$DOCGOV_ENABLE_MODEL" = "true" ]; then args+=(--enable-model --model-id "$DOCGOV_MODEL_ID"); fi
+          if [ "$DOCGOV_MODE" = "audit" ] && [ -n "$DOCGOV_SUPABASE_PROJECTS" ]; then
+            args+=(--supabase-projects "$DOCGOV_SUPABASE_PROJECTS")
+            args+=(--supabase-evidence-dir "$DOCGOV_SUPABASE_EVIDENCE_DIR")
+          fi
         fi
         python -m docgov "${args[@]}" > "$RUNNER_TEMP/docgov-result.json"
         status=$?

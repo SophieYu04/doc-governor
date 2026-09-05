@@ -179,6 +179,40 @@ class EngineTests(unittest.TestCase):
         self.assertIn("previous_hash", entry)
         self.assertIn("new_hash", entry)
 
+    def test_untracked_remote_evidence_invalidates_dependent_state(self) -> None:
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        catalog["documents"] = [{
+            "path": "docs/status/RELEASE.md",
+            "type": "state",
+            "status": "current",
+            "last_verified_at": datetime.now(timezone.utc).isoformat(),
+            "depends_on": ["docs/evidence/supabase-advisors/**"],
+        }]
+        write(self.catalog_path, json.dumps(catalog))
+        write(self.root / "docs/status/RELEASE.md", "# Release\n")
+        self.commit("state with remote evidence dependency")
+        write(
+            self.root / "docs/evidence/supabase-advisors/2026-09-05/staging.json",
+            '{"kind":"supabase_advisor_snapshot"}\n',
+        )
+
+        snapshot = build_snapshot(self.root, self.catalog_path)
+        self.assertIn(
+            "docs/evidence/supabase-advisors/2026-09-05/staging.json",
+            snapshot.changed,
+        )
+        decision = analyze(snapshot, mode="audit")
+        self.assertTrue(any(
+            item.action == "mark_stale" and item.documents == ["docs/status/RELEASE.md"]
+            for item in decision.findings
+        ))
+        applied = apply_safe_actions(snapshot, decision, self.catalog_path, self.ledger_path)
+        self.assertTrue(applied.changed)
+        self.assertEqual(
+            Catalog.load(self.catalog_path).record_for("docs/status/RELEASE.md").status,
+            "stale",
+        )
+
     def test_yaml_timestamp_is_normalized_for_ttl_checks(self) -> None:
         write(
             self.catalog_path,
