@@ -139,7 +139,11 @@ runs:
       if: inputs.apply == 'true' && steps.govern.outputs.changed == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
       shell: bash
       env:
-        GITHUB_TOKEN: ${{ github.token }}
+        # Composite actions do not reliably expose github.token as a step env
+        # when the caller supplies a token through its workflow environment.
+        # Preserve the caller-provided token so same-repository PRs can receive
+        # safe, evidence-backed corrections.
+        GITHUB_TOKEN: ${{ github.token || env.GITHUB_TOKEN }}
       run: |
         git config user.name "doc-governor[bot]"
         git config user.email "doc-governor[bot]@users.noreply.github.com"
