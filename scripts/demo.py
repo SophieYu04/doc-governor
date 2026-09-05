@@ -18,7 +18,7 @@ def commit(root: Path, message: str) -> str:
     return git(root, "rev-parse", "HEAD")
 
 
-def run_demo(destination: Path) -> dict[str, object]:
+def run_demo(destination: Path, *, enable_model: bool = False) -> dict[str, object]:
     source = Path(__file__).resolve().parents[1] / "examples" / "supabase-demo"
     shutil.copytree(source, destination, dirs_exist_ok=True)
     subprocess.run(["git", "init", "-q"], cwd=destination, check=True)
@@ -49,8 +49,7 @@ def run_demo(destination: Path) -> dict[str, object]:
     public_doc.write_text("# Announcement\n\nUnreviewed public claim.\n", encoding="utf-8")
     head = commit(destination, "simulate coding-agent documentation drift")
 
-    completed = subprocess.run(
-        [
+    command = [
             sys.executable,
             "-m",
             "docgov",
@@ -63,7 +62,11 @@ def run_demo(destination: Path) -> dict[str, object]:
             "--head",
             head,
             "--apply",
-        ],
+        ]
+    if enable_model:
+        command.append("--enable-model")
+    completed = subprocess.run(
+        command,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -72,6 +75,8 @@ def run_demo(destination: Path) -> dict[str, object]:
     decision = json.loads(completed.stdout)
     if completed.returncode != 2 or decision.get("result") != "action_required":
         raise RuntimeError(f"Unexpected demo decision: {completed.stdout}\n{completed.stderr}")
+    if enable_model and not decision.get("model_used"):
+        raise RuntimeError(f"Strands was not used by the model-enabled demo: {completed.stdout}")
     if (destination / "docs" / "architecture" / "API-notes.md").exists():
         raise RuntimeError("Safe duplicate was not removed")
     for path in ("docs/architecture/API.md", "docs/architecture/EDGE_FUNCTIONS.md"):
@@ -85,14 +90,19 @@ def run_demo(destination: Path) -> dict[str, object]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run the deterministic Doc Governor demo scenario.")
     parser.add_argument("--keep", action="store_true", help="Keep the temporary demo repository for inspection.")
+    parser.add_argument(
+        "--enable-model",
+        action="store_true",
+        help="Run the same bounded scenario through Strands and Amazon Bedrock.",
+    )
     args = parser.parse_args()
     if args.keep:
         destination = Path(tempfile.mkdtemp(prefix="docgov-demo-"))
-        decision = run_demo(destination)
+        decision = run_demo(destination, enable_model=args.enable_model)
         print(f"Demo repository: {destination}")
     else:
         with tempfile.TemporaryDirectory(prefix="docgov-demo-") as temporary:
-            decision = run_demo(Path(temporary))
+            decision = run_demo(Path(temporary), enable_model=args.enable_model)
     print(json.dumps({
         "result": decision["result"],
         "changed": decision["changed"],
@@ -103,6 +113,8 @@ def main() -> int:
             for finding in decision["findings"]
             if finding["risk"] == "high"
         }),
+        "model_used": decision.get("model_used", False),
+        "model_trace": decision.get("model_trace", []),
     }, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 

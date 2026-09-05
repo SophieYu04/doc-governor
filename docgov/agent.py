@@ -26,6 +26,50 @@ MAX_MODEL_DOCUMENT_CHARS = 12_000
 MAX_MODEL_CONTEXT_CHARS = 60_000
 
 
+class _StrandsTraceRecorder:
+    """Record a privacy-safe proof of tool use without model or document text."""
+
+    def __init__(self) -> None:
+        self.events: List[Dict[str, str]] = []
+        self._seen_tool_use_ids: set[str] = set()
+
+    def __call__(self, **kwargs: Any) -> None:
+        tool_use = kwargs.get("current_tool_use")
+        if not isinstance(tool_use, dict):
+            return
+        name = tool_use.get("name")
+        tool_use_id = tool_use.get("toolUseId")
+        if not isinstance(name, str) or not name or not isinstance(tool_use_id, str) or not tool_use_id:
+            return
+        if tool_use_id in self._seen_tool_use_ids:
+            return
+        self._seen_tool_use_ids.add(tool_use_id)
+        self.events.append({"event": "tool_call", "name": name})
+
+    def record_model_complete(self, model_id: str) -> None:
+        self.events.append({"event": "model_complete", "name": model_id})
+
+
+def _validate_snapshot_tool_trace(events: List[Dict[str, str]]) -> None:
+    tool_names = [event.get("name", "") for event in events if event.get("event") == "tool_call"]
+    if tool_names != ["repository_snapshot"]:
+        raise ValueError("Strands must call repository_snapshot exactly once")
+
+
+def _confine_model_finding(finding: Finding) -> Finding:
+    """Allow a model-only mutation only when deterministic duplicate checks re-prove it."""
+    if finding.kind == "duplicate" and finding.action == "merge_new_file":
+        return finding
+    finding.risk = "high"
+    finding.action = "block"
+    finding.proposed_patch = None
+    if not finding.human_decision:
+        finding.human_decision = (
+            "Review this semantic finding; model-only evidence cannot authorize a repository change."
+        )
+    return finding
+
+
 def _result_text(result: Any) -> str:
     if isinstance(result, str):
         return result
@@ -139,11 +183,12 @@ def invoke_strands(snapshot: RepositorySnapshot, baseline: GovernanceDecision, m
         "region_name": os.environ.get("AWS_REGION", "us-west-2"),
     }
     model = BedrockModel(**model_kwargs)
+    trace_recorder = _StrandsTraceRecorder()
     agent = Agent(
         model=model,
         tools=[repository_snapshot],
         system_prompt=SYSTEM_PROMPT,
-        callback_handler=None,
+        callback_handler=trace_recorder,
     )
     prompt = (
         "Call repository_snapshot exactly once, then review only those bounded facts. "
@@ -166,6 +211,8 @@ def invoke_strands(snapshot: RepositorySnapshot, baseline: GovernanceDecision, m
         timer.cancel()
     if cancel_signal.is_set():
         raise TimeoutError(f"Strands model invocation exceeded {timeout_seconds:g} seconds")
+    _validate_snapshot_tool_trace(trace_recorder.events)
+    trace_recorder.record_model_complete(str(model_kwargs["model_id"]))
     structured = getattr(result, "structured_output", None)
     if structured is not None:
         if hasattr(structured, "model_dump"):
@@ -187,7 +234,7 @@ def invoke_strands(snapshot: RepositorySnapshot, baseline: GovernanceDecision, m
     for finding in model_findings:
         key = (finding.kind, tuple(finding.documents))
         if key not in deterministic_keys:
-            findings.append(finding)
+            findings.append(_confine_model_finding(finding))
     result = "action_required" if any(item.risk == "high" for item in findings) else ("changed" if findings else "pass")
     return GovernanceDecision(
         run_id=baseline.run_id,
@@ -197,6 +244,7 @@ def invoke_strands(snapshot: RepositorySnapshot, baseline: GovernanceDecision, m
         findings=findings,
         head_sha=baseline.head_sha,
         model_used=True,
+        model_trace=trace_recorder.events,
     )
 
 

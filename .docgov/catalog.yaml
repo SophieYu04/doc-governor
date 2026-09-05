@@ -1,70 +1,86 @@
-{
-  "version": 1,
-  "taxonomy": {
-    "contract": ["docs/architecture/**", "examples/supabase-demo/docs/architecture/**"],
-    "state": ["docs/status/**", "examples/supabase-demo/docs/status/**"],
-    "procedure": ["docs/operations/**", "examples/supabase-demo/docs/operations/**"],
-    "evidence": ["docs/evidence/**", "examples/supabase-demo/docs/evidence/**"],
-    "decision": ["docs/decisions/**", "examples/supabase-demo/docs/decisions/**"]
-  },
-  "documents": [
-    {
-      "path": "AGENTS.md",
-      "type": "procedure",
-      "owner": "maintainers",
-      "status": "current",
-      "last_verified_at": "2026-09-04T16:41:00Z",
-      "depends_on": ["docgov/**", "action.yml", ".github/workflows/**"]
-    },
-    {
-      "path": "README.md",
-      "type": "contract",
-      "owner": "maintainers",
-      "status": "current",
-      "depends_on": ["docgov/**", "action.yml", ".github/workflows/**", "pyproject.toml"]
-    },
-    {
-      "path": "examples/supabase-demo/docs/architecture/API.md",
-      "type": "contract",
-      "owner": "backend",
-      "status": "current",
-      "depends_on": ["examples/supabase-demo/supabase/functions/**", "examples/supabase-demo/supabase/config.toml"]
-    },
-    {
-      "path": "examples/supabase-demo/docs/architecture/EDGE_FUNCTIONS.md",
-      "type": "contract",
-      "owner": "backend",
-      "status": "current",
-      "depends_on": ["examples/supabase-demo/supabase/functions/**", "examples/supabase-demo/supabase/config.toml"]
-    },
-    {
-      "path": "examples/supabase-demo/docs/status/RELEASE.md",
-      "type": "state",
-      "owner": "release",
-      "status": "current",
-      "last_verified_at": "2026-09-03T00:00:00Z",
-      "depends_on": ["examples/supabase-demo/supabase/**"]
-    },
-    {
-      "path": "examples/supabase-demo/docs/public/ANNOUNCEMENT.md",
-      "type": "contract",
-      "owner": "legal",
-      "status": "current",
-      "approval": "human"
-    }
-  ],
-  "policies": {
-    "auto_remove_new_duplicates": true,
-    "require_verification_ledger": true,
-    "control_documents": ["AGENTS.md"],
-    "ignore": [],
-    "protected": [
-      "docs/legal/**",
-      "docs/public/**",
-      "README.md",
-      "docs/status/production*.md",
-      "docs/status/production/**",
-      "examples/supabase-demo/docs/public/**"
-    ]
-  }
-}
+version: 1
+taxonomy:
+  contract:
+  - docs/architecture/**
+  - examples/supabase-demo/docs/architecture/**
+  state:
+  - docs/status/**
+  - examples/supabase-demo/docs/status/**
+  procedure:
+  - docs/operations/**
+  - examples/supabase-demo/docs/operations/**
+  evidence:
+  - docs/evidence/**
+  - examples/supabase-demo/docs/evidence/**
+  decision:
+  - docs/decisions/**
+  - examples/supabase-demo/docs/decisions/**
+documents:
+- path: AGENTS.md
+  type: procedure
+  owner: maintainers
+  status: current
+  depends_on:
+  - docgov/**
+  - action.yml
+  - .github/workflows/**
+  approval: auto
+  last_verified_at: '2026-09-04T16:41:00Z'
+  authority: canonical
+- path: README.md
+  type: contract
+  owner: maintainers
+  status: current
+  depends_on:
+  - docgov/**
+  - action.yml
+  - .github/workflows/**
+  - pyproject.toml
+  approval: auto
+  authority: canonical
+- path: examples/supabase-demo/docs/architecture/API.md
+  type: contract
+  owner: backend
+  status: current
+  depends_on:
+  - examples/supabase-demo/supabase/functions/**
+  - examples/supabase-demo/supabase/config.toml
+  approval: auto
+  authority: canonical
+- path: examples/supabase-demo/docs/architecture/EDGE_FUNCTIONS.md
+  type: contract
+  owner: backend
+  status: current
+  depends_on:
+  - examples/supabase-demo/supabase/functions/**
+  - examples/supabase-demo/supabase/config.toml
+  approval: auto
+  authority: canonical
+- path: examples/supabase-demo/docs/status/RELEASE.md
+  type: state
+  owner: release
+  status: current
+  depends_on:
+  - examples/supabase-demo/supabase/**
+  approval: auto
+  last_verified_at: '2026-09-03T00:00:00Z'
+  authority: canonical
+- path: examples/supabase-demo/docs/public/ANNOUNCEMENT.md
+  type: contract
+  owner: legal
+  status: current
+  approval: human
+  authority: canonical
+policies:
+  auto_remove_new_duplicates: true
+  require_verification_ledger: true
+  control_documents:
+  - AGENTS.md
+  ignore: []
+  protected:
+  - docs/legal/**
+  - docs/public/**
+  - README.md
+  - docs/status/production*.md
+  - docs/status/production/**
+  - examples/supabase-demo/docs/public/**

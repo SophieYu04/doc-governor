@@ -95,6 +95,7 @@ class GovernanceDecision:
     modified_paths: List[str] = field(default_factory=list)
     head_sha: Optional[str] = None
     model_used: bool = False
+    model_trace: List[Dict[str, str]] = field(default_factory=list)
     error: Optional[str] = None
 
     @property
@@ -112,6 +113,7 @@ class GovernanceDecision:
             "trust_results": [result.to_dict() for result in self.trust_results],
             "modified_paths": sorted(set(self.modified_paths)),
             "model_used": self.model_used,
+            "model_trace": self.model_trace,
         }
         if self.head_sha:
             value["head_sha"] = self.head_sha
