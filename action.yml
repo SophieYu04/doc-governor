@@ -50,10 +50,6 @@ inputs:
     description: Fail closed if the Strands invocation exceeds this duration
     required: false
     default: "60"
-  github_token:
-    description: GitHub token used only to push an evidence-backed correction to a same-repository PR branch
-    required: false
-    default: ""
 outputs:
   result:
     description: pass, changed, action_required, or blocked
@@ -142,8 +138,6 @@ runs:
       id: commit
       if: inputs.apply == 'true' && steps.govern.outputs.changed == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
       shell: bash
-      env:
-        GITHUB_TOKEN: ${{ inputs.github_token }}
       run: |
         git config user.name "doc-governor[bot]"
         git config user.email "doc-governor[bot]@users.noreply.github.com"
@@ -159,7 +153,9 @@ runs:
         PY
         if git diff --cached --quiet; then exit 0; fi
         git commit -m "chore(docs): apply Doc Governor correction"
-        git -c "http.extraheader=AUTHORIZATION: bearer ${GITHUB_TOKEN}" push origin "HEAD:${GITHUB_HEAD_REF}"
+        # actions/checkout persists the short-lived GITHUB_TOKEN only for
+        # same-repository PRs; fork PRs never reach this step.
+        git push origin "HEAD:${GITHUB_HEAD_REF}"
     - name: Finalize action outputs
       id: finalize
       if: always()
