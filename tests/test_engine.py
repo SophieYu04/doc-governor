@@ -4,12 +4,14 @@ import json
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 from docgov.catalog import Catalog
 from docgov.agent import MAX_MODEL_CONTEXT_CHARS, _bounded_documents, _json_from_text, govern
-from docgov.cli import _init_catalog
+from docgov.cli import _init_catalog, main as cli_main
 from docgov.engine import analyze, analyze_trust, apply_safe_actions, build_snapshot, record_baseline
 from docgov.git_tools import content_at_ref
 from docgov.ledger import Ledger
@@ -244,6 +246,26 @@ documents:
         head = self.commit("binary dependency")
 
         self.assertEqual(content_at_ref(self.root, head, "assets/image.png"), binary_path.read_bytes().hex())
+
+    def test_invalid_review_ref_fails_closed(self) -> None:
+        write(self.root / "docs/architecture/API.md", "# API\n")
+        self.commit("initial")
+        with self.assertRaises(subprocess.CalledProcessError):
+            build_snapshot(self.root, self.catalog_path, "missing-base", "missing-head")
+        output = StringIO()
+        with redirect_stdout(output):
+            exit_code = cli_main([
+                "--root",
+                str(self.root),
+                "--json",
+                "review",
+                "--base",
+                "missing-base",
+                "--head",
+                "missing-head",
+            ])
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(json.loads(output.getvalue())["result"], "blocked")
 
     def test_conflicting_canonical_documents_are_not_deleted(self) -> None:
         catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))

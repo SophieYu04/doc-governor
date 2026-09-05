@@ -90,10 +90,7 @@ def changed_paths(root: Path, base: str | None, head: str | None) -> Tuple[List[
             if status == "??" or "A" in status:
                 added.append(path)
         return sorted(set(changed)), sorted(set(added))
-    try:
-        output = run_git(root, "diff", "--name-status", base, head)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return [], []
+    output = run_git(root, "diff", "--name-status", base, head)
     changed: List[str] = []
     added: List[str] = []
     for line in output.splitlines():
@@ -110,10 +107,7 @@ def changed_paths(root: Path, base: str | None, head: str | None) -> Tuple[List[
 def deleted_paths(root: Path, base: str | None, head: str | None) -> List[str]:
     if not base or not head:
         return []
-    try:
-        output = run_git(root, "diff", "--name-status", base, head)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return []
+    output = run_git(root, "diff", "--name-status", base, head)
     return [
         parts[-1]
         for line in output.splitlines()
@@ -124,7 +118,4 @@ def deleted_paths(root: Path, base: str | None, head: str | None) -> List[str]:
 def changed_content(root: Path, base: str | None, head: str | None) -> str:
     if not base or not head:
         return ""
-    try:
-        return run_git(root, "diff", "--unified=0", base, head)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return ""
+    return run_git(root, "diff", "--unified=0", base, head)
