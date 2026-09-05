@@ -19,7 +19,7 @@ documents:
 - path: AGENTS.md
   type: procedure
   owner: maintainers
-  status: stale
+  status: current
   depends_on:
   - docgov/**
   - action.yml
