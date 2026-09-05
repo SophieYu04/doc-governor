@@ -38,7 +38,7 @@ jobs:
   govern:
     runs-on: ubuntu-latest
     steps:
-      - uses: SophieYu04/doc-governor@v0.2.8
+      - uses: SophieYu04/doc-governor@v0.2.9
         with:
           mode: review
           base_sha: ${{ github.event.pull_request.base.sha }}
@@ -86,6 +86,8 @@ docgov verify --strict
 ```
 
 The baseline command writes only `.docgov/ledger.jsonl`. PR review accepts a matching verification record when both the document hash and its dependency fingerprint match the checked-out head; it does not immediately mark that document stale again. Documents already quarantined as `stale` stay unreadable through strict verification without creating repeat PR noise. Future source changes invalidate the matching document until it is updated and verified again. Set `DOCGOV_ENABLE_MODEL=1`, pass `--enable-model`, and install `.[bedrock]` only when semantic classification and duplicate reasoning are needed.
+
+A model-enabled decision includes a privacy-safe `model_trace` containing only tool and model identifiers, never document text or reasoning. The Strands loop must call the bounded `repository_snapshot` tool exactly once or the run fails closed. A model-only finding cannot update content or mark a document stale; only an exact or additive new-file duplicate can proceed to deterministic boundary checks. Every other model-only finding requires a human decision.
 
 ### Read-only Supabase Advisor evidence
 
@@ -151,6 +153,14 @@ python scripts/demo.py
 ```
 
 The fixture simulates a coding agent adding an Edge Function, creating a duplicate API document, refreshing a State date without evidence, and changing protected public copy. Doc Governor synchronizes the source-backed API and Edge inventory, removes the duplicate, preserves the protected file, and returns `action_required` for the two human decisions. Use `--keep` to inspect the temporary repository. A scheduled audit demonstrates TTL expiry without a code change.
+
+After configuring AWS credentials with Bedrock access, run the identical scenario through the real Strands loop:
+
+```sh
+python scripts/demo.py --enable-model --keep
+```
+
+The JSON output proves `model_used: true` and shows the redacted `repository_snapshot` tool trace. The deterministic run remains the zero-credential path for judges and contributors.
 
 ## Development and tests
 
