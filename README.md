@@ -38,7 +38,7 @@ jobs:
   govern:
     runs-on: ubuntu-latest
     steps:
-      - uses: SophieYu04/doc-governor@v0.2.7
+      - uses: SophieYu04/doc-governor@v0.2.8
         with:
           mode: review
           base_sha: ${{ github.event.pull_request.base.sha }}
@@ -85,7 +85,7 @@ docgov baseline --approved
 docgov verify --strict
 ```
 
-The baseline command writes only `.docgov/ledger.jsonl`. Future source changes invalidate the matching document until it is updated and verified again. Set `DOCGOV_ENABLE_MODEL=1`, pass `--enable-model`, and install `.[bedrock]` only when semantic classification and duplicate reasoning are needed.
+The baseline command writes only `.docgov/ledger.jsonl`. PR review accepts a matching verification record when both the document hash and its dependency fingerprint match the checked-out head; it does not immediately mark that document stale again. Documents already quarantined as `stale` stay unreadable through strict verification without creating repeat PR noise. Future source changes invalidate the matching document until it is updated and verified again. Set `DOCGOV_ENABLE_MODEL=1`, pass `--enable-model`, and install `.[bedrock]` only when semantic classification and duplicate reasoning are needed.
 
 ### Read-only Supabase Advisor evidence
 

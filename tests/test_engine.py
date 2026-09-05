@@ -221,6 +221,68 @@ class EngineTests(unittest.TestCase):
             "stale",
         )
 
+    def test_review_respects_matching_verification_baseline_in_same_pr(self) -> None:
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        catalog["documents"] = [{
+            "path": "docs/architecture/API.md",
+            "type": "contract",
+            "status": "current",
+            "depends_on": ["src/**"],
+        }]
+        catalog["policies"]["require_verification_ledger"] = True
+        write(self.catalog_path, json.dumps(catalog))
+        write(self.root / "docs/architecture/API.md", "# API\n")
+        write(self.root / "src/api.txt", "v1\n")
+        base = self.commit("initial contract")
+
+        write(self.root / "src/api.txt", "v2\n")
+        self.commit("change implementation")
+        snapshot = build_snapshot(
+            self.root,
+            self.catalog_path,
+            base,
+            git(self.root, "rev-parse", "HEAD"),
+            ledger_path=self.ledger_path,
+        )
+        baseline = record_baseline(snapshot, self.ledger_path, approved=True)
+        self.assertEqual(baseline.result, "changed")
+        head = self.commit("record exact content baseline")
+
+        decision = analyze(build_snapshot(
+            self.root,
+            self.catalog_path,
+            base,
+            head,
+            ledger_path=self.ledger_path,
+        ))
+        self.assertNotIn("mark_stale", [finding.action for finding in decision.findings])
+        self.assertEqual(decision.result, "pass")
+
+    def test_review_does_not_repeat_stale_finding_for_quarantined_document(self) -> None:
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        catalog["documents"] = [{
+            "path": "docs/architecture/API.md",
+            "type": "contract",
+            "status": "stale",
+            "depends_on": ["src/**"],
+        }]
+        write(self.catalog_path, json.dumps(catalog))
+        write(self.root / "docs/architecture/API.md", "# Old API\n")
+        write(self.root / "src/api.txt", "v1\n")
+        base = self.commit("quarantined contract")
+        write(self.root / "src/api.txt", "v2\n")
+        head = self.commit("change implementation again")
+
+        decision = analyze(build_snapshot(
+            self.root,
+            self.catalog_path,
+            base,
+            head,
+            ledger_path=self.ledger_path,
+        ))
+        self.assertNotIn("mark_stale", [finding.action for finding in decision.findings])
+        self.assertEqual(decision.result, "pass")
+
     def test_yaml_timestamp_is_normalized_for_ttl_checks(self) -> None:
         write(
             self.catalog_path,

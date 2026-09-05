@@ -308,6 +308,33 @@ def verification_record(snapshot: RepositorySnapshot, record: DocumentRecord) ->
     }
 
 
+def has_matching_verification_baseline(
+    snapshot: RepositorySnapshot,
+    record: DocumentRecord,
+) -> bool:
+    """Return whether the latest ledger proof matches the checked-out document and dependencies."""
+    if record.status != "current" or record.path not in snapshot.files:
+        return False
+    ledger_entries = (
+        snapshot.source_ledger_entries
+        if snapshot.source_ledger_entries is not None
+        else Ledger(snapshot.root / snapshot.ledger_path).entries()
+    )
+    baseline = next((
+        entry
+        for entry in reversed(ledger_entries)
+        if entry.get("document") == record.path
+        and entry.get("action") == "verify_current"
+    ), None)
+    if baseline is None:
+        return False
+    current = verification_record(snapshot, record)
+    return (
+        baseline.get("new_hash") == current["new_hash"]
+        and baseline.get("dependency_fingerprint") == current["dependency_fingerprint"]
+    )
+
+
 def _status_scope(record: DocumentRecord) -> Tuple[str, str]:
     if record.type == "evidence" and record.status in {"current", "immutable"}:
         return "historical_evidence", "Evidence is immutable and only proves its recorded point in time."
@@ -649,8 +676,10 @@ def analyze(snapshot: RepositorySnapshot, mode: str = "review", run_id: Optional
         for record in impacted_records(snapshot):
             if (
                 record.type in {"contract", "state", "procedure"}
+                and record.status == "current"
                 and record.path not in snapshot.changed
                 and record.path not in supabase_sync_paths
+                and not has_matching_verification_baseline(snapshot, record)
             ):
                 findings.append(Finding(
                     kind="stale",
