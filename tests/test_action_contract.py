@@ -45,9 +45,15 @@ class ActionContractTests(unittest.TestCase):
         source = (ROOT / ".github/workflows/docgov-review.yml").read_text(encoding="utf-8")
         same_repo = "github.event.pull_request.head.repo.full_name == github.repository"
         self.assertGreaterEqual(source.count(same_repo), 2)
-        self.assertIn("persist-credentials: false", source)
+        self.assertIn(f"persist-credentials: ${{{{ {same_repo} }}}}", source)
         self.assertIn("vars.DOCGOV_AWS_ROLE_ARN != ''", source)
         self.assertIn("id-token: write", source)
+
+    def test_daily_audit_branches_from_the_checked_out_commit(self) -> None:
+        source = (ROOT / ".github/workflows/docgov-audit.yml").read_text(encoding="utf-8")
+        self.assertIn("base_sha=$(git rev-parse HEAD)", source)
+        self.assertIn('git checkout -B "$BRANCH" "$base_sha"', source)
+        self.assertNotIn('git checkout -B "$BRANCH" "$GITHUB_SHA"', source)
 
     def test_decision_card_comment_is_updated_instead_of_duplicated(self) -> None:
         decision = GovernanceDecision("run", "review", "pass", False)
