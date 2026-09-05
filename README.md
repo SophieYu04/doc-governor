@@ -38,7 +38,7 @@ jobs:
   govern:
     runs-on: ubuntu-latest
     steps:
-      - uses: SophieYu04/doc-governor@v0.2.2
+      - uses: SophieYu04/doc-governor@v0.2.3
         with:
           mode: review
           base_sha: ${{ github.event.pull_request.base.sha }}

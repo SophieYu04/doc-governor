@@ -104,11 +104,3 @@ def inventory(root: Path) -> Dict[str, Any]:
         "storage_buckets": buckets,
         "document_markers": _document_markers(root),
     }
-
-
-def evidence_for_change(root: Path, relative_path: str) -> str | None:
-    if "supabase" in relative_path.split("/"):
-        return relative_path
-    if relative_path.startswith("FirstgramIOS/"):
-        return relative_path
-    return None

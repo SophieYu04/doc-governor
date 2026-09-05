@@ -197,6 +197,7 @@ class EngineTests(unittest.TestCase):
             self.root / "docs/evidence/supabase-advisors/2026-09-05/staging.json",
             '{"kind":"supabase_advisor_snapshot"}\n',
         )
+        write(self.root / "unrelated.txt", "not a declared dependency\n")
 
         snapshot = build_snapshot(self.root, self.catalog_path)
         self.assertIn(

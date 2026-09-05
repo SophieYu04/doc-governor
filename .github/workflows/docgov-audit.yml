@@ -25,7 +25,7 @@ jobs:
           git fetch origin "$BRANCH" || true
           git checkout -B "$BRANCH" "$GITHUB_SHA"
           echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
-      - uses: SophieYu04/doc-governor@v0.2.2
+      - uses: SophieYu04/doc-governor@v0.2.3
         id: docgov
         with:
           mode: audit

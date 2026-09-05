@@ -24,7 +24,7 @@ from .git_tools import (
 from .ledger import Ledger, sha256_file, sha256_text, utc_now
 from .models import DocumentRecord, Evidence, Finding, GovernanceDecision, TrustResult
 from .patterns import matches_repo_glob
-from .supabase import evidence_for_change, inventory as supabase_inventory
+from .supabase import inventory as supabase_inventory
 
 
 DATE_PATTERN = re.compile(
@@ -200,14 +200,23 @@ def impacted_records(snapshot: RepositorySnapshot) -> List[DocumentRecord]:
     return impacted
 
 
-def changed_source_evidence(snapshot: RepositorySnapshot) -> List[Evidence]:
+def changed_dependency_evidence(
+    snapshot: RepositorySnapshot,
+    record: DocumentRecord,
+) -> List[Evidence]:
     evidence: List[Evidence] = []
     for path in snapshot.changed:
-        source_path = evidence_for_change(snapshot.root, path)
-        if source_path is None and snapshot.catalog.classify(path) == "evidence":
-            source_path = path
-        if source_path:
-            evidence.extend(evidence_for_path(snapshot, source_path))
+        if not any(matches_repo_glob(path, pattern) for pattern in record.depends_on):
+            continue
+        path_evidence = evidence_for_path(snapshot, path)
+        if path_evidence:
+            evidence.extend(path_evidence)
+        else:
+            evidence.append(Evidence(
+                path=path,
+                kind="deleted_dependency",
+                detail="The declared dependency is absent from the working tree.",
+            ))
     return evidence
 
 
@@ -649,7 +658,7 @@ def analyze(snapshot: RepositorySnapshot, mode: str = "review", run_id: Optional
                     action="mark_stale",
                     documents=[record.path],
                     reason="A declared dependency changed after this document was verified.",
-                    evidence=changed_source_evidence(snapshot),
+                    evidence=changed_dependency_evidence(snapshot, record),
                 ))
 
     for record in snapshot.catalog.documents:

@@ -30,7 +30,7 @@ jobs:
           role-to-assume: ${{ vars.DOCGOV_AWS_ROLE_ARN }}
           aws-region: us-west-2
       - name: Run Doc Governor
-        uses: SophieYu04/doc-governor@v0.2.2
+        uses: SophieYu04/doc-governor@v0.2.3
         with:
           mode: review
           base_sha: ${{ github.event.pull_request.base.sha }}
