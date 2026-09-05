@@ -50,6 +50,10 @@ inputs:
     description: Fail closed if the Strands invocation exceeds this duration
     required: false
     default: "60"
+  github_token:
+    description: GitHub token used only to push an evidence-backed correction to a same-repository PR branch
+    required: false
+    default: ""
 outputs:
   result:
     description: pass, changed, action_required, or blocked
@@ -139,11 +143,7 @@ runs:
       if: inputs.apply == 'true' && steps.govern.outputs.changed == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
       shell: bash
       env:
-        # Composite actions do not reliably expose github.token as a step env
-        # when the caller supplies a token through its workflow environment.
-        # Preserve the caller-provided token so same-repository PRs can receive
-        # safe, evidence-backed corrections.
-        GITHUB_TOKEN: ${{ github.token || env.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
       run: |
         git config user.name "doc-governor[bot]"
         git config user.email "doc-governor[bot]@users.noreply.github.com"
