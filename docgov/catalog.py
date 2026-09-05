@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import fnmatch
 import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from .models import DocumentRecord
+from .patterns import matches_repo_glob
 
 try:
     import yaml  # type: ignore
@@ -107,14 +107,14 @@ class Catalog:
         if record:
             return record.type
         for document_type, patterns in self.taxonomy.items():
-            if any(fnmatch.fnmatch(normalized, pattern) for pattern in patterns):
+            if any(matches_repo_glob(normalized, pattern) for pattern in patterns):
                 return document_type
         return None
 
     def is_protected(self, relative_path: str) -> bool:
         normalized = relative_path.replace("\\", "/")
         if any(
-            fnmatch.fnmatch(normalized, pattern)
+            matches_repo_glob(normalized, pattern)
             for pattern in self.policies.get("protected", [])
         ):
             return True
@@ -135,7 +135,7 @@ class Catalog:
     def ignored(self, relative_path: str) -> bool:
         normalized = relative_path.replace("\\", "/")
         return any(
-            fnmatch.fnmatch(normalized, pattern)
+            matches_repo_glob(normalized, pattern)
             for pattern in self.policies.get("ignore", [])
         )
 

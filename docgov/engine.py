@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import difflib
-import fnmatch
 import hashlib
 import json
 import posixpath
@@ -24,6 +23,7 @@ from .git_tools import (
 )
 from .ledger import Ledger, sha256_file, sha256_text, utc_now
 from .models import DocumentRecord, Evidence, Finding, GovernanceDecision, TrustResult
+from .patterns import matches_repo_glob
 from .supabase import evidence_for_change, inventory as supabase_inventory
 
 
@@ -194,7 +194,7 @@ def impacted_records(snapshot: RepositorySnapshot) -> List[DocumentRecord]:
             impacted.append(record)
             continue
         for dependency in record.depends_on:
-            if any(fnmatch.fnmatch(path, dependency) for path in snapshot.changed):
+            if any(matches_repo_glob(path, dependency) for path in snapshot.changed):
                 impacted.append(record)
                 break
     return impacted
@@ -246,7 +246,7 @@ def dependency_evidence(snapshot: RepositorySnapshot, record: DocumentRecord) ->
         path
         for pattern in record.depends_on
         for path in candidates
-        if fnmatch.fnmatch(path, pattern)
+        if matches_repo_glob(path, pattern)
     }):
         content = _content_for_path(snapshot, relative_path)
         if content is None:
@@ -273,7 +273,7 @@ def dependency_summary(record: DocumentRecord, evidence: Iterable[Evidence]) -> 
     items = list(evidence)
     summaries: List[Evidence] = []
     for pattern in record.depends_on:
-        matched = [item for item in items if fnmatch.fnmatch(item.path, pattern)]
+        matched = [item for item in items if matches_repo_glob(item.path, pattern)]
         summaries.append(Evidence(
             path=pattern,
             kind="dependency_fingerprint",
