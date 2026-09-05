@@ -54,6 +54,7 @@ def _request(method: str, url: str, token: str, payload: Optional[Dict[str, Any]
 
 def upsert_pr_comment(decision: GovernanceDecision, repository: str, issue_number: str, token: str) -> None:
     base = f"https://api.github.com/repos/{repository}/issues/{issue_number}/comments"
+    update_base = f"https://api.github.com/repos/{repository}/issues/comments"
     body = {"body": report_markdown(decision)}
     comments = _request("GET", base, token)
     existing = next(
@@ -61,7 +62,7 @@ def upsert_pr_comment(decision: GovernanceDecision, repository: str, issue_numbe
         None,
     )
     if existing:
-        _request("PATCH", f"{base}/{existing['id']}", token, body)
+        _request("PATCH", f"{update_base}/{existing['id']}", token, body)
     else:
         _request("POST", base, token, body)
 
@@ -78,7 +79,10 @@ def upsert_check_run(decision: GovernanceDecision, repository: str, head_sha: st
     if not head_sha:
         return
     base = f"https://api.github.com/repos/{repository}/check-runs"
-    query = f"{base}?check_name={quote('Doc Governor', safe='')}&head_sha={quote(head_sha, safe='')}"
+    query = (
+        f"https://api.github.com/repos/{repository}/commits/{quote(head_sha, safe='')}/check-runs"
+        f"?check_name={quote('Doc Governor', safe='')}&filter=latest&per_page=100"
+    )
     existing_payload = _request("GET", query, token) or {}
     existing = next(iter(existing_payload.get("check_runs", [])), None)
     conclusion = "success" if decision.result in {"pass", "changed"} else "action_required"

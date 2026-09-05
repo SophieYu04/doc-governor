@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import yaml
 
-from docgov.github import MARKER, report_markdown, upsert_pr_comment
+from docgov.github import MARKER, report_markdown, upsert_check_run, upsert_pr_comment
 from docgov.models import GovernanceDecision
 
 
@@ -55,7 +55,37 @@ class ActionContractTests(unittest.TestCase):
         with patch("docgov.github._request", side_effect=[existing, None]) as request:
             upsert_pr_comment(decision, "owner/repo", "3", "token")
         self.assertEqual(request.call_args_list[1].args[0], "PATCH")
-        self.assertTrue(request.call_args_list[1].args[1].endswith("/17"))
+        self.assertEqual(
+            request.call_args_list[1].args[1],
+            "https://api.github.com/repos/owner/repo/issues/comments/17",
+        )
+
+    def test_check_run_is_looked_up_by_commit_ref_before_update(self) -> None:
+        decision = GovernanceDecision("run", "review", "pass", False)
+        existing = {"check_runs": [{"id": 23, "name": "Doc Governor"}]}
+        with patch("docgov.github._request", side_effect=[existing, None]) as request:
+            upsert_check_run(decision, "owner/repo", "abc123", "token")
+        self.assertEqual(request.call_args_list[0].args[:3], (
+            "GET",
+            "https://api.github.com/repos/owner/repo/commits/abc123/check-runs"
+            "?check_name=Doc%20Governor&filter=latest&per_page=100",
+            "token",
+        ))
+        self.assertEqual(request.call_args_list[1].args[:3], (
+            "PATCH",
+            "https://api.github.com/repos/owner/repo/check-runs/23",
+            "token",
+        ))
+
+    def test_check_run_is_created_when_the_commit_has_no_existing_report(self) -> None:
+        decision = GovernanceDecision("run", "review", "pass", False)
+        with patch("docgov.github._request", side_effect=[{"check_runs": []}, None]) as request:
+            upsert_check_run(decision, "owner/repo", "abc123", "token")
+        self.assertEqual(request.call_args_list[1].args[:3], (
+            "POST",
+            "https://api.github.com/repos/owner/repo/check-runs",
+            "token",
+        ))
 
     def test_blocked_model_error_is_visible_in_decision_card(self) -> None:
         decision = GovernanceDecision("run", "review", "blocked", False, error="model timeout")
