@@ -38,7 +38,7 @@ jobs:
   govern:
     runs-on: ubuntu-latest
     steps:
-      - uses: SophieYu04/doc-governor@v0.2.6
+      - uses: SophieYu04/doc-governor@v0.2.7
         with:
           mode: review
           base_sha: ${{ github.event.pull_request.base.sha }}
@@ -50,8 +50,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
-3. Create a least-privilege AWS role from `infra/aws/github-oidc-trust-policy.json` and `infra/aws/bedrock-inference-policy.json`, substitute the AWS account ID, and set its ARN as the repository variable `DOCGOV_AWS_ROLE_ARN`. The workflow exchanges GitHub OIDC for short-lived credentials only on same-repository pull requests; forks remain deterministic and receive no AWS identity.
-4. Run `docgov init` once and review the generated Catalog proposal.
+3. Read the repository's exact GitHub OIDC subject prefix with `gh api repos/OWNER/REPO/actions/oidc/customization/sub --jq .sub_claim_prefix`. In `infra/aws/github-oidc-trust-policy.json`, replace `<AWS_ACCOUNT_ID>` and `<GITHUB_SUB_CLAIM_PREFIX>` with the account ID and that complete prefix. This supports both name-based and immutable owner/repository-ID subjects; do not guess the subject from the repository name.
+4. Create a least-privilege AWS role with that trust policy and `infra/aws/bedrock-inference-policy.json`, replacing its account ID too, then set the role ARN as the repository variable `DOCGOV_AWS_ROLE_ARN`. The Bedrock policy permits only the selected US inference profile and its three documented destination-region foundation models. The workflow exchanges GitHub OIDC for short-lived credentials only on same-repository pull requests; forks remain deterministic and receive no AWS identity.
+5. Run `docgov init` once and review the generated Catalog proposal.
+
+The OIDC subject lookup follows [GitHub's AWS guidance](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws), including immutable repository subjects for newer repositories. The destination-model grants follow [Amazon Bedrock's geographic cross-Region IAM requirements](https://docs.aws.amazon.com/bedrock/latest/userguide/geographic-cross-region-inference.html). Governor responses use the current [Strands structured-output invocation](https://strandsagents.com/docs/user-guide/concepts/agents/structured-output/) and fail closed on validation or timeout errors.
 
 Fork pull requests run in read-only mode. Never use `pull_request_target` to execute untrusted pull request code or expose repository secrets.
 

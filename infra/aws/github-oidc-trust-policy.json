@@ -12,7 +12,7 @@
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:SophieYu04/doc-governor:*"
+          "token.actions.githubusercontent.com:sub": "<GITHUB_SUB_CLAIM_PREFIX>:*"
         }
       }
     }

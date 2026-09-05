@@ -55,6 +55,18 @@ class ActionContractTests(unittest.TestCase):
         self.assertIn('git checkout -B "$BRANCH" "$base_sha"', source)
         self.assertNotIn('git checkout -B "$BRANCH" "$GITHUB_SHA"', source)
 
+    def test_aws_templates_are_repository_scoped_and_cover_profile_destinations(self) -> None:
+        trust = (ROOT / "infra/aws/github-oidc-trust-policy.json").read_text(encoding="utf-8")
+        policy = (ROOT / "infra/aws/bedrock-inference-policy.json").read_text(encoding="utf-8")
+        self.assertIn('"<GITHUB_SUB_CLAIM_PREFIX>:*"', trust)
+        self.assertNotIn("repo:SophieYu04/", trust)
+        self.assertIn('"bedrock:InferenceProfileArn"', policy)
+        for region in ("us-east-1", "us-east-2", "us-west-2"):
+            self.assertIn(
+                f"arn:aws:bedrock:{region}::foundation-model/anthropic.claude-sonnet-4-20250514-v1:0",
+                policy,
+            )
+
     def test_decision_card_comment_is_updated_instead_of_duplicated(self) -> None:
         decision = GovernanceDecision("run", "review", "pass", False)
         existing = [{"id": 17, "body": MARKER, "user": {"type": "Bot"}}]
