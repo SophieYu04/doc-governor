@@ -204,10 +204,15 @@ class EngineTests(unittest.TestCase):
             snapshot.changed,
         )
         decision = analyze(snapshot, mode="audit")
-        self.assertTrue(any(
-            item.action == "mark_stale" and item.documents == ["docs/status/RELEASE.md"]
+        finding = next(
+            item
             for item in decision.findings
-        ))
+            if item.action == "mark_stale" and item.documents == ["docs/status/RELEASE.md"]
+        )
+        self.assertEqual(
+            [item.path for item in finding.evidence],
+            ["docs/evidence/supabase-advisors/2026-09-05/staging.json"],
+        )
         applied = apply_safe_actions(snapshot, decision, self.catalog_path, self.ledger_path)
         self.assertTrue(applied.changed)
         self.assertEqual(

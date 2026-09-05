@@ -204,6 +204,8 @@ def changed_source_evidence(snapshot: RepositorySnapshot) -> List[Evidence]:
     evidence: List[Evidence] = []
     for path in snapshot.changed:
         source_path = evidence_for_change(snapshot.root, path)
+        if source_path is None and snapshot.catalog.classify(path) == "evidence":
+            source_path = path
         if source_path:
             evidence.extend(evidence_for_path(snapshot, source_path))
     return evidence
