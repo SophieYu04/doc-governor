@@ -55,6 +55,20 @@ class ActionContractTests(unittest.TestCase):
         self.assertIn('git checkout -B "$BRANCH" "$base_sha"', source)
         self.assertNotIn('git checkout -B "$BRANCH" "$GITHUB_SHA"', source)
 
+    def test_source_reconciliation_is_commit_triggered_and_stages_only_safe_changes(self) -> None:
+        source = (ROOT / ".github/workflows/docgov-source-reconcile.yml").read_text(encoding="utf-8")
+        workflow = yaml.safe_load(source)
+        self.assertEqual(workflow[True]["push"]["branches"], ["main"])
+        self.assertEqual(
+            workflow[True]["push"]["paths"],
+            ["**/supabase/config.toml", "**/supabase/functions/**"],
+        )
+        self.assertIn("BRANCH: docgov/source-reconcile", source)
+        self.assertIn("enable_model: false", source)
+        self.assertIn('json.load(handle).get("modified_paths", [])', source)
+        self.assertNotIn("git add .", source)
+        self.assertIn('gh pr create --base main', source)
+
     def test_aws_templates_are_repository_scoped_and_cover_profile_destinations(self) -> None:
         trust = (ROOT / "infra/aws/github-oidc-trust-policy.json").read_text(encoding="utf-8")
         policy = (ROOT / "infra/aws/bedrock-inference-policy.json").read_text(encoding="utf-8")

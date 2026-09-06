@@ -438,6 +438,21 @@ create policy media_read on storage.objects using (bucket_id = 'avatars');
             baseline = Ledger(self.ledger_path).latest_for(document, "verify_current")
             self.assertEqual(baseline["verifier"], "supabase_inventory")
 
+        synced = self.commit("synchronize added edge function")
+        (self.root / "supabase/functions/send-email/index.ts").unlink()
+        write(self.root / "supabase/config.toml", "[functions.health-check]\nverify_jwt = true\n")
+        reverted = self.commit("revert edge function")
+        snapshot = build_snapshot(
+            self.root, self.catalog_path, synced, reverted, ledger_path=self.ledger_path
+        )
+        decision = analyze(snapshot)
+        applied = apply_safe_actions(snapshot, decision, self.catalog_path, self.ledger_path)
+        self.assertEqual(applied.result, "changed")
+        for document in ("docs/architecture/API.md", "docs/architecture/EDGE_FUNCTIONS.md"):
+            content = (self.root / document).read_text(encoding="utf-8")
+            self.assertIn('"functions":["health-check"]', content)
+            self.assertNotIn('"send-email":false', content)
+
     def test_nested_supabase_inventory_reports_relative_config_path(self) -> None:
         write(self.root / "examples/demo/supabase/config.toml", "[functions.health-check]\nverify_jwt = true\n")
         write(self.root / "examples/demo/supabase/functions/health-check/index.ts", "export default {};\n")

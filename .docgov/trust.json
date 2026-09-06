@@ -4,15 +4,16 @@
     {
       "canonical_path": null,
       "content_sha256": "2c38681e4b34dd9d4e2d5370cd40e9a8925a5738f0ebd69681f421bbbeffe3b6",
-      "dependency_fingerprint": "bcb189c267bdd6623d34d93e86ae6f6a81e4ba435a889e81ef3293b3488545a5",
+      "dependency_fingerprint": "f6cec71b063995397d3f7ca10fa702b4f921240933aac27921500b3bd7f10e8e",
       "head_sha": "566a1521792f776ee3debe7b2e81dde8c0a12ca8",
       "path": "AGENTS.md",
-      "reason": "Governance control document is readable so the trust gate can bootstrap.",
+      "reason": "Catalog status is 'stale', not current.",
       "scope": "current_fact",
       "source_pointers": [
         ".github/workflows/docgov-audit.yml",
         ".github/workflows/docgov-init.yml",
         ".github/workflows/docgov-review.yml",
+        ".github/workflows/docgov-source-reconcile.yml",
         ".github/workflows/test.yml",
         "action.yml",
         "docgov/__init__.py",
@@ -34,21 +35,22 @@
         "docgov/trust_state.py"
       ],
       "type": "procedure",
-      "usable": true,
+      "usable": false,
       "verified_at": "2026-09-06T09:36:32Z"
     },
     {
       "canonical_path": null,
-      "content_sha256": "cf4c55c306d1f508b60f452e2a9b3264e701794f6f9c73e4fe989d11179542af",
-      "dependency_fingerprint": "3a6e3938552b0c4d2f173bd8c684a4365c653dccf9fb6bf3e5c779dc2c4cca6d",
+      "content_sha256": "d948707a08847db9be7d75a2346fb913628164e9b34f3d75cea7611726a536fd",
+      "dependency_fingerprint": "7a2e24e9cb55a91869be82b3f35a558eed5b87475df52a7383490526a75a7428",
       "head_sha": "566a1521792f776ee3debe7b2e81dde8c0a12ca8",
       "path": "README.md",
-      "reason": "The document is current and its recorded evidence still matches.",
-      "scope": "current_fact",
+      "reason": "Document content changed after its latest successful verification.",
+      "scope": "untrusted",
       "source_pointers": [
         ".github/workflows/docgov-audit.yml",
         ".github/workflows/docgov-init.yml",
         ".github/workflows/docgov-review.yml",
+        ".github/workflows/docgov-source-reconcile.yml",
         ".github/workflows/test.yml",
         "action.yml",
         "docgov/__init__.py",
@@ -71,7 +73,7 @@
         "pyproject.toml"
       ],
       "type": "contract",
-      "usable": true,
+      "usable": false,
       "verified_at": "2026-09-06T09:36:32Z"
     },
     {

@@ -52,7 +52,15 @@ WRITE PATH (PR / daily audit)              READ PATH (every agent read)
             └──► .docgov/ledger.jsonl                       + pointer to source
 ```
 
-Trust is precomputed at pull-request time and on the daily audit, and committed to `.docgov/trust.json`. The read path is a table lookup plus one cheap deterministic recheck — it never calls a model and never touches the network.
+Trust is precomputed at pull-request time, on the daily audit, and after source reconciliation, then committed to `.docgov/trust.json`. The read path is a table lookup plus one cheap deterministic recheck — it never calls a model and never touches the network.
+
+### Commit-triggered source reconciliation
+
+Copy `.github/workflows/docgov-source-reconcile.yml` to reconcile generated Supabase inventory after a commit reaches `main`. It triggers only when a declared `**/supabase/config.toml` or `**/supabase/functions/**` path changes, runs the deterministic engine with the model disabled, and opens or updates one `docgov/source-reconcile` maintenance pull request when safe changes exist.
+
+The reconciler derives Edge Function names and JWT flags from the checked-out commit's configuration and function source. Adding functions updates eligible `docgov:supabase-inventory` markers; reverting that commit derives the earlier inventory and restores the marker to match. It stages only paths in Doc Governor's `modified_paths` result, including the ledger and trust table when they change.
+
+This reconciles source facts, not environment claims: a Git commit does not assert what is deployed to staging or production. Source/config mismatches, protected paths, missing or ambiguous markers, and ordinary Markdown prose remain blocked or stale for human review.
 
 **Why the recheck matters.** A developer commits code locally and `trust.json` is instantly older than `HEAD`. Without step 2 the server would serve stale content marked fresh. The recheck is pure hashing, so a document that was readable a second ago becomes unreadable the moment one of its declared dependencies changes — with no Doc Governor run in between.
 

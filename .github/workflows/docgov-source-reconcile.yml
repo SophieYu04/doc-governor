@@ -1,0 +1,68 @@
+name: Doc Governor source reconciliation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/supabase/config.toml'
+      - '**/supabase/functions/**'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: docgov-source-reconcile-main
+  cancel-in-progress: true
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Prepare source reconciliation branch
+        id: branch
+        env:
+          BRANCH: docgov/source-reconcile
+        shell: bash
+        run: |
+          base_sha=$(git rev-parse HEAD)
+          git checkout -B "$BRANCH" "$base_sha"
+          echo "name=$BRANCH" >> "$GITHUB_OUTPUT"
+      - uses: SophieYu04/doc-governor@v0.3.0
+        id: docgov
+        with:
+          mode: audit
+          apply: true
+          enable_model: false
+          aws_region: us-west-2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Open maintenance PR for source reconciliation
+        if: steps.docgov.outputs.changed == 'true'
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+          DECISION_JSON: ${{ steps.docgov.outputs.decision_json }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          git config user.name "doc-governor[bot]"
+          git config user.email "doc-governor[bot]@users.noreply.github.com"
+          python - "$DECISION_JSON" <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              paths = json.load(handle).get("modified_paths", [])
+          if paths:
+              subprocess.run(["git", "add", "--", *paths], check=True)
+          PY
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "chore(docs): reconcile source inventory"
+          git push --force-with-lease --set-upstream origin "$BRANCH"
+          if [ "$(gh pr list --head "$BRANCH" --state open --json number --jq 'length')" = "0" ]; then
+            gh pr create --base main --title "chore(docs): reconcile source inventory" --body "Doc Governor deterministically synchronized generated documentation inventory from this commit's declared source files."
+          fi
