@@ -9,8 +9,10 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import quote
+
+from .models import Evidence, Finding
 
 
 DEFAULT_API_BASE = "https://api.supabase.com"
@@ -20,6 +22,32 @@ PROJECT_PATTERN = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 class SupabaseAdvisorError(RuntimeError):
     """A fail-closed error raised while collecting remote Advisor evidence."""
+
+
+#: Ledger action a release workflow records when it promotes a build to an
+#: environment, together with the Advisor fingerprint observed at that moment.
+PROMOTION_ACTION = "promote_environment"
+#: Ledger document key for an environment-level record.
+ENVIRONMENT_DOCUMENT_PREFIX = "supabase:"
+
+
+@dataclass(frozen=True)
+class EnvironmentFingerprint:
+    """One environment's Advisor state, reduced to something comparable."""
+
+    environment: str
+    advisor_fingerprint: str
+    lint_counts: Dict[str, int]
+    collected_at: str
+
+    @property
+    def signals(self) -> set[str]:
+        """Advisor categories and lint types this environment currently reports.
+
+        Both are kept: a new lint type inside a category staging already has is
+        still a way the environments have diverged.
+        """
+        return {name for name, count in self.lint_counts.items() if count}
 
 
 @dataclass(frozen=True)
@@ -143,10 +171,14 @@ def summarize_lints(lints: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     identities.sort(key=_canonical_json)
     level_counts = Counter(identity["level"] for identity in identities)
     name_counts = Counter(identity["name"] for identity in identities)
+    category_counts: Counter[str] = Counter()
+    for identity in identities:
+        category_counts.update(identity["categories"])
     return {
         "finding_count": len(identities),
         "level_counts": dict(sorted(level_counts.items())),
         "name_counts": dict(sorted(name_counts.items())),
+        "category_counts": dict(sorted(category_counts.items())),
         "finding_fingerprints": sorted(_sha256(identity) for identity in identities),
         "fingerprint_sha256": _sha256(identities),
     }
@@ -172,7 +204,7 @@ def build_evidence_snapshot(
         "advisors": summaries,
     }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "supabase_advisor_snapshot",
         "environment": environment,
         "project_ref_sha256": stable_state["project_ref_sha256"],
@@ -306,3 +338,157 @@ def collect_advisor_evidence(
         write_evidence(root, snapshot, output_dir=output_dir)
         for _, snapshot in fetched
     ]
+
+
+def environment_fingerprint(snapshot: Mapping[str, Any]) -> EnvironmentFingerprint:
+    """Reduce an Advisor evidence snapshot to the comparable shape drift detection needs."""
+    advisors = snapshot.get("advisors", {})
+    if not isinstance(advisors, Mapping):
+        raise SupabaseAdvisorError("The Advisor snapshot has no advisors summary.")
+    counts: Dict[str, int] = {}
+    for advisor_type in ("security", "performance"):
+        summary = advisors.get(advisor_type, {})
+        if not isinstance(summary, Mapping):
+            continue
+        for category, count in (summary.get("category_counts") or {}).items():
+            counts[f"{advisor_type}:{category}"] = counts.get(f"{advisor_type}:{category}", 0) + int(count)
+        for name, count in (summary.get("name_counts") or {}).items():
+            counts[f"{advisor_type}:lint:{name}"] = counts.get(f"{advisor_type}:lint:{name}", 0) + int(count)
+    return EnvironmentFingerprint(
+        environment=str(snapshot.get("environment", "")),
+        advisor_fingerprint=str(snapshot.get("fingerprint_sha256", "")),
+        lint_counts=dict(sorted(counts.items())),
+        collected_at=str(snapshot.get("observed_at", "")),
+    )
+
+
+def latest_promotion(
+    ledger_entries: Sequence[Mapping[str, Any]],
+    environment: str,
+) -> Optional[Mapping[str, Any]]:
+    """Return the last release promotion recorded for an environment, if any."""
+    document = f"{ENVIRONMENT_DOCUMENT_PREFIX}{environment}"
+    promotion: Optional[Mapping[str, Any]] = None
+    for entry in ledger_entries:
+        if entry.get("document") == document and entry.get("action") == PROMOTION_ACTION:
+            promotion = entry
+    return promotion
+
+
+def compare_environments(
+    fingerprints: Mapping[str, EnvironmentFingerprint],
+    ledger: Any,
+    *,
+    production: str = "production",
+    reference: str = "staging",
+) -> List[Finding]:
+    """Detect symptomatic divergence between what Git produced and what production is.
+
+    Read-only by construction: this function reads Advisor summaries and the
+    append-only ledger and returns findings. It never deploys, never writes, and
+    never holds a production write credential (non-goal 1, D7).
+
+    Two rules, both stated as failures of the documented release flow
+    ``staging -> git commit / migration -> release branch -> production deployment``:
+
+    1. Production's Advisor fingerprint differs from the one recorded when the
+       last release was promoted to production, and no later promotion explains
+       it. Someone changed production outside the release flow.
+    2. Production reports Advisor categories that staging does not. The
+       environments have diverged, so staging verification no longer predicts
+       production.
+
+    A drifted production makes every document describing it untrustworthy, which
+    is how this connects back to the read path: if production is not at a known
+    Git state, no document about production may be served.
+    """
+    findings: List[Finding] = []
+    current = fingerprints.get(production)
+    if current is None:
+        return findings
+
+    entries = list(ledger.entries()) if hasattr(ledger, "entries") else list(ledger or [])
+    promotion = latest_promotion(entries, production)
+    baseline = fingerprints.get(reference)
+    if promotion is None and baseline is None:
+        # Neither rule can be evaluated. Reporting "no findings" here would let a
+        # caller record the environment as clean, so the absence of evidence is
+        # itself the finding (P3).
+        return [Finding(
+            kind="environment_drift",
+            risk="high",
+            action="block",
+            documents=[],
+            reason=(
+                f"The {production} environment cannot be checked: there is no recorded release "
+                f"promotion to compare its Advisor state against, and no {reference} evidence to "
+                "compare it with. An unverifiable environment is not a verified one."
+            ),
+            evidence=[Evidence(path=production, kind="environment", sha256=current.advisor_fingerprint)],
+            human_decision=(
+                f"Collect {reference} Advisor evidence, or record the promoted state with "
+                "`docgov drift --apply --record-promotion "
+                f"{production}`."
+            ),
+        )]
+    if promotion is None:
+        # Honest boundary: with no recorded promotion there is no Git-side state
+        # to compare against, so rule 1 cannot fire. Rule 2 still applies.
+        pass
+    elif str(promotion.get("dependency_fingerprint", "")) != current.advisor_fingerprint:
+        findings.append(Finding(
+            kind="environment_drift",
+            risk="high",
+            action="block",
+            documents=[],
+            reason=(
+                f"The {production} environment no longer matches the state recorded when the last "
+                "release was promoted to it, and no later promotion explains the change. It was "
+                "changed outside the release flow."
+            ),
+            evidence=[
+                Evidence(path=production, kind="environment", sha256=current.advisor_fingerprint),
+                Evidence(
+                    path=production,
+                    kind="promoted_baseline",
+                    sha256=str(promotion.get("dependency_fingerprint", "")),
+                    detail=str(promotion.get("timestamp", "")),
+                ),
+            ],
+            human_decision=(
+                "Reconcile the environment with the release branch, then record a new promotion "
+                "with `docgov drift --record-promotion`."
+            ),
+        ))
+
+    if baseline is not None:
+        extra = sorted(current.signals - baseline.signals)
+        if extra:
+            findings.append(Finding(
+                kind="environment_drift",
+                risk="high",
+                action="block",
+                documents=[],
+                reason=(
+                    f"The {production} environment reports {len(extra)} Advisor "
+                    f"signal{'' if len(extra) == 1 else 's'} (categories or lint types) that "
+                    f"{reference} does not, so {reference} verification no longer predicts {production}."
+                ),
+                evidence=[
+                    Evidence(path=production, kind="environment", sha256=current.advisor_fingerprint),
+                    Evidence(
+                        # A reference environment is context, not a drifted one:
+                        # the trust state keys off `kind == "environment"` to
+                        # decide which environments to distrust.
+                        path=reference,
+                        kind="reference_environment",
+                        sha256=baseline.advisor_fingerprint,
+                        detail=f"{len(extra)} signal(s) present only in {production}",
+                    ),
+                ],
+                human_decision=(
+                    f"Bring {reference} and {production} back into alignment, or re-verify the "
+                    f"documents that describe {production} against {production} itself."
+                ),
+            ))
+    return findings

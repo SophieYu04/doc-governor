@@ -1,11 +1,21 @@
 {
   "version": 1,
   "taxonomy": {
-    "contract": ["docs/architecture/**"],
-    "state": ["docs/status/**"],
-    "procedure": ["docs/operations/**"],
-    "evidence": ["docs/evidence/**"],
-    "decision": ["docs/decisions/**"]
+    "contract": [
+      "docs/architecture/**"
+    ],
+    "state": [
+      "docs/status/**"
+    ],
+    "procedure": [
+      "docs/operations/**"
+    ],
+    "evidence": [
+      "docs/evidence/**"
+    ],
+    "decision": [
+      "docs/decisions/**"
+    ]
   },
   "documents": [
     {
@@ -13,14 +23,20 @@
       "type": "contract",
       "owner": "backend",
       "status": "current",
-      "depends_on": ["supabase/functions/**", "supabase/config.toml"]
+      "depends_on": [
+        "supabase/functions/**",
+        "supabase/config.toml"
+      ]
     },
     {
       "path": "docs/architecture/EDGE_FUNCTIONS.md",
       "type": "contract",
       "owner": "backend",
       "status": "current",
-      "depends_on": ["supabase/functions/**", "supabase/config.toml"]
+      "depends_on": [
+        "supabase/functions/**",
+        "supabase/config.toml"
+      ]
     },
     {
       "path": "docs/status/RELEASE.md",
@@ -35,6 +51,18 @@
       "owner": "legal",
       "status": "current",
       "approval": "human"
+    },
+    {
+      "path": "docs/status/PRODUCTION.md",
+      "type": "state",
+      "owner": "release",
+      "status": "current",
+      "depends_on": [
+        "ops/production/**"
+      ],
+      "environments": [
+        "production"
+      ]
     }
   ],
   "policies": {

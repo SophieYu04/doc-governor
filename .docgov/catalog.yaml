@@ -63,14 +63,27 @@ documents:
   depends_on:
   - examples/supabase-demo/supabase/**
   approval: auto
-  last_verified_at: '2026-09-03T00:00:00Z'
+  last_verified_at: '2026-09-06T04:56:35Z'
   authority: canonical
+  ttl_days: 3650
 - path: examples/supabase-demo/docs/public/ANNOUNCEMENT.md
   type: contract
   owner: legal
   status: current
   approval: human
   authority: canonical
+- path: examples/supabase-demo/docs/status/PRODUCTION.md
+  type: state
+  owner: release
+  status: current
+  depends_on:
+  - examples/supabase-demo/ops/production/**
+  approval: auto
+  authority: canonical
+  environments:
+  - production
+  ttl_days: 3650
+  last_verified_at: '2026-09-06T04:56:35Z'
 policies:
   auto_remove_new_duplicates: true
   require_verification_ledger: true

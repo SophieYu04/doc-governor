@@ -1,0 +1,158 @@
+{
+  "catalog_path": ".docgov/catalog.yaml",
+  "documents": [
+    {
+      "canonical_path": null,
+      "content_sha256": "2c38681e4b34dd9d4e2d5370cd40e9a8925a5738f0ebd69681f421bbbeffe3b6",
+      "dependency_fingerprint": "b73fa1b7dd6ea12edc6b2c779e255112d0f031726cb0c0dc8c12bc300a807193",
+      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "path": "AGENTS.md",
+      "reason": "Governance control document is readable so the trust gate can bootstrap.",
+      "scope": "current_fact",
+      "source_pointers": [
+        ".github/workflows/docgov-audit.yml",
+        ".github/workflows/docgov-init.yml",
+        ".github/workflows/docgov-review.yml",
+        ".github/workflows/test.yml",
+        "action.yml",
+        "docgov/__init__.py",
+        "docgov/__main__.py",
+        "docgov/agent.py",
+        "docgov/agents.py",
+        "docgov/catalog.py",
+        "docgov/cli.py",
+        "docgov/drafting.py",
+        "docgov/engine.py",
+        "docgov/git_tools.py",
+        "docgov/github.py",
+        "docgov/ledger.py",
+        "docgov/mcp_server.py",
+        "docgov/models.py",
+        "docgov/patterns.py",
+        "docgov/supabase.py",
+        "docgov/supabase_remote.py",
+        "docgov/trust_state.py"
+      ],
+      "type": "procedure",
+      "usable": true,
+      "verified_at": "2026-09-06T04:56:36Z"
+    },
+    {
+      "canonical_path": null,
+      "content_sha256": "24f544d8a65324c9c4dd82751f7e7da1dfa650f131418e678ce5662ec4dc6708",
+      "dependency_fingerprint": "97846f4d14203ed7548996922b1bdc00b5fddc9f33e1affffc74041b4870dff8",
+      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "path": "README.md",
+      "reason": "Doc Governor blocked this document in its latest run: it conflicts with another document.",
+      "scope": "current_fact",
+      "source_pointers": [
+        ".github/workflows/docgov-audit.yml",
+        ".github/workflows/docgov-init.yml",
+        ".github/workflows/docgov-review.yml",
+        ".github/workflows/test.yml",
+        "action.yml",
+        "docgov/__init__.py",
+        "docgov/__main__.py",
+        "docgov/agent.py",
+        "docgov/agents.py",
+        "docgov/catalog.py",
+        "docgov/cli.py",
+        "docgov/drafting.py",
+        "docgov/engine.py",
+        "docgov/git_tools.py",
+        "docgov/github.py",
+        "docgov/ledger.py",
+        "docgov/mcp_server.py",
+        "docgov/models.py",
+        "docgov/patterns.py",
+        "docgov/supabase.py",
+        "docgov/supabase_remote.py",
+        "docgov/trust_state.py",
+        "pyproject.toml"
+      ],
+      "type": "contract",
+      "usable": false,
+      "verified_at": "2026-09-06T05:12:33Z"
+    },
+    {
+      "canonical_path": null,
+      "content_sha256": "be55b3c03ad1f358d7aa045a9f9d304b022f76a5ab0884952a76be1f31feefdd",
+      "dependency_fingerprint": "e315d8f08a30c7f62808bea153a3ce4d2c0e158bac8240b9f6095f96273fdbc3",
+      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "path": "examples/supabase-demo/docs/architecture/API.md",
+      "reason": "The document is current and its recorded evidence still matches.",
+      "scope": "current_fact",
+      "source_pointers": [
+        "examples/supabase-demo/supabase/config.toml",
+        "examples/supabase-demo/supabase/functions/health-check/index.ts"
+      ],
+      "type": "contract",
+      "usable": true,
+      "verified_at": "2026-09-06T04:56:36Z"
+    },
+    {
+      "canonical_path": null,
+      "content_sha256": "02ce5482a1628217c453c2e6262a1f13e05f671e1bcddf1aad41cc96371522b8",
+      "dependency_fingerprint": "e315d8f08a30c7f62808bea153a3ce4d2c0e158bac8240b9f6095f96273fdbc3",
+      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "path": "examples/supabase-demo/docs/architecture/EDGE_FUNCTIONS.md",
+      "reason": "The document is current and its recorded evidence still matches.",
+      "scope": "current_fact",
+      "source_pointers": [
+        "examples/supabase-demo/supabase/config.toml",
+        "examples/supabase-demo/supabase/functions/health-check/index.ts"
+      ],
+      "type": "contract",
+      "usable": true,
+      "verified_at": "2026-09-06T04:56:36Z"
+    },
+    {
+      "canonical_path": null,
+      "content_sha256": "b13ff077861bb657ba461e4463c9568f4e3e07000fca51e8d78c59af5d9b33ab",
+      "dependency_fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "path": "examples/supabase-demo/docs/public/ANNOUNCEMENT.md",
+      "reason": "The document is current and its recorded evidence still matches.",
+      "scope": "current_fact",
+      "source_pointers": [],
+      "type": "contract",
+      "usable": true,
+      "verified_at": "2026-09-06T04:56:36Z"
+    },
+    {
+      "canonical_path": null,
+      "content_sha256": "2da781e9d81a92294ba578a9d32ea9eda3eebf16c5287f43d0342cbf993cd88d",
+      "dependency_fingerprint": "8acfd561a0ec18a5cab0a1b01c94b15d3fd410b1fda97bc1a6cd11f66424097a",
+      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "path": "examples/supabase-demo/docs/status/PRODUCTION.md",
+      "reason": "The document is current and its recorded evidence still matches.",
+      "scope": "current_fact",
+      "source_pointers": [
+        "examples/supabase-demo/ops/production/inventory.json"
+      ],
+      "type": "state",
+      "usable": true,
+      "verified_at": "2026-09-06T04:56:36Z"
+    },
+    {
+      "canonical_path": null,
+      "content_sha256": "e754e064f1c5d000ff13f3e24053997f2b57a7cd13efa239c1eaf7c7439abd04",
+      "dependency_fingerprint": "a2e1109d20c595426acd0e3bd002fc4f0c4f99ab49a4fc2dc09dc3774deb3e1c",
+      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "path": "examples/supabase-demo/docs/status/RELEASE.md",
+      "reason": "The document is current and its recorded evidence still matches.",
+      "scope": "current_fact",
+      "source_pointers": [
+        "examples/supabase-demo/supabase/config.toml",
+        "examples/supabase-demo/supabase/functions/health-check/index.ts",
+        "examples/supabase-demo/supabase/migrations/001_create_profile.sql"
+      ],
+      "type": "state",
+      "usable": true,
+      "verified_at": "2026-09-06T04:56:36Z"
+    }
+  ],
+  "drifted_environments": [],
+  "ledger_path": ".docgov/ledger.jsonl",
+  "version": 1
+}

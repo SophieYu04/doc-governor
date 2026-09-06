@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "doc-governor"
-version = "0.2.9"
-description = "A Strands-powered GitHub agent that governs AI-generated Markdown."
+version = "0.3.0"
+description = "Trusted document supply for AI coding agents: a Strands-powered governor and a read-only MCP server."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
@@ -20,10 +20,14 @@ bedrock = [
   "pydantic>=2.13,<3",
   "strands-agents>=1.54,<2",
 ]
+# The read path stays dependency-light: the deterministic core needs nothing but
+# PyYAML, and the MCP SDK is only required to expose it over stdio.
+mcp = ["mcp>=1.27,<2"]
 dev = ["pytest>=8.0"]
 
 [project.scripts]
 docgov = "docgov.cli:main"
+docgov-mcp = "docgov.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["docgov*"]

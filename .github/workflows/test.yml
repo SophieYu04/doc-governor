@@ -17,9 +17,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - run: python -m pip install '.[bedrock,dev]'
+      - run: python -m pip install '.[bedrock,dev,mcp]'
       - name: Verify Strands and Bedrock imports
         run: python -c 'from strands import Agent, tool; from strands.models import BedrockModel; print(Agent, tool, BedrockModel)'
       - run: python -m pytest -q
-      - run: python scripts/demo.py
+      - name: Verify the MCP SDK import
+        run: python -c 'from mcp.server import Server; from mcp.server.stdio import stdio_server; print(Server)'
+      - run: python scripts/demo.py --mcp-stdio
       - run: python -m docgov --root . --json verify --strict

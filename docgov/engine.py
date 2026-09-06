@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from .catalog import Catalog
+from .drafting import apply_span, validate_draft
 from .git_tools import (
     changed_content,
     changed_paths,
@@ -248,10 +249,25 @@ def _content_for_path(snapshot: RepositorySnapshot, relative_path: str) -> Optio
         return absolute.read_bytes().hex()
 
 
-def dependency_evidence(snapshot: RepositorySnapshot, record: DocumentRecord) -> List[Evidence]:
+def dependency_candidates(snapshot: RepositorySnapshot) -> List[str]:
+    """List the repository paths a dependency glob may match.
+
+    Exposed so a caller that resolves many documents in one pass (the MCP
+    listing) can compute the Git listing once instead of once per document.
+    """
     candidates = tracked_paths(snapshot.root, ref=snapshot.source_ref)
     if not snapshot.source_ref:
         candidates = sorted(set(candidates) | set(untracked_paths(snapshot.root)))
+    return list(candidates)
+
+
+def dependency_evidence(
+    snapshot: RepositorySnapshot,
+    record: DocumentRecord,
+    candidates: Optional[List[str]] = None,
+) -> List[Evidence]:
+    if candidates is None:
+        candidates = dependency_candidates(snapshot)
     evidence: List[Evidence] = []
     for relative_path in sorted({
         path
@@ -937,6 +953,84 @@ def apply_safe_actions(
             pending_ledger.append({
                 "document": document,
                 "action": "update",
+                "reason": finding.reason,
+                "evidence": finding.evidence,
+                "previous_hash": sha256_text(previous_content),
+                "new_hash": sha256_text(updated_content),
+            })
+        elif finding.action == "draft_contract_span" and len(finding.documents) == 1 and finding.proposed_patch:
+            # A model proposed this prose. Deterministic code re-proves the whole
+            # grounding argument here rather than trusting that it was proved
+            # upstream: the authority to mutate a file lives in this function (P4).
+            document = finding.documents[0]
+            record = snapshot.catalog.record_for(document)
+            destination = repository_path(snapshot.root, document)
+
+            def _reject(reason: str) -> GovernanceDecision:
+                finding.risk = "high"
+                finding.action = "block"
+                finding.proposed_patch = None
+                finding.human_decision = reason
+                decision.result = "action_required"
+                return decision
+
+            try:
+                payload = json.loads(finding.proposed_patch)
+                original_span = str(payload["original_span"])
+                proposed_span = str(payload["proposed_span"])
+                declared_tokens = [str(item) for item in payload.get("factual_tokens", [])]
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                return _reject("The proposed contract span was not a well-formed patch.")
+            if (
+                destination is None
+                or record is None
+                or not document.endswith(".md")
+                or not destination.exists()
+            ):
+                return _reject("The proposed contract span left the governed Markdown boundary.")
+            cited = sorted({item.path for item in finding.evidence if item.kind == "cited_source"})
+            cited_sources: Dict[str, str] = {}
+            for source_path in cited:
+                # A `depends_on` glob such as `**/*.py` matches `../../secret.py`,
+                # so the boundary has to be enforced on the resolved path, not on
+                # the glob. Anything outside the repository is simply not read,
+                # which leaves its tokens ungrounded and discards the draft.
+                located = repository_path(snapshot.root, source_path)
+                if located is None or not located.exists() or not located.is_file():
+                    return _reject(
+                        "The proposed contract span cited a source outside the repository boundary."
+                    )
+                content = _content_for_path(snapshot, source_path)
+                if content is not None:
+                    cited_sources[source_path] = content
+            previous_content = planned_writes.get(
+                document, destination.read_text(encoding="utf-8")
+            )
+            validation = validate_draft(
+                document_path=document,
+                document_type=record.type,
+                declared_dependencies=record.depends_on,
+                current_text=previous_content,
+                original_span=original_span,
+                proposed_span=proposed_span,
+                cited_sources=cited_sources,
+                declared_tokens=declared_tokens,
+                protected=snapshot.catalog.is_protected(document),
+                approval=record.approval,
+            )
+            if not validation.ok:
+                return _reject(f"The proposed contract span failed grounding validation: {validation.reason}")
+            updated_content = apply_span(previous_content, original_span, proposed_span)
+            if updated_content is None or updated_content == previous_content:
+                return _reject("The proposed contract span no longer matches the document exactly once.")
+            planned_writes[document] = updated_content
+            # The correction is applied, but no verification baseline is recorded:
+            # rewriting prose does not prove the document as a whole, and the
+            # changed content hash correctly leaves it untrusted until a
+            # maintainer re-verifies it.
+            pending_ledger.append({
+                "document": document,
+                "action": "draft_contract_span",
                 "reason": finding.reason,
                 "evidence": finding.evidence,
                 "previous_hash": sha256_text(previous_content),
