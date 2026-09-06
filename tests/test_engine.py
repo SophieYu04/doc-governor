@@ -10,7 +10,8 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 from docgov.catalog import Catalog
-from docgov.agent import MAX_MODEL_CONTEXT_CHARS, _bounded_documents, _json_from_text, govern
+from docgov.agent import govern
+from docgov.agents import MAX_AUDIT_DOCUMENTS, MAX_DOCUMENT_CHARS, AgentContractError, parse_json_object, plan_graph
 from docgov.cli import _init_catalog, main as cli_main
 from docgov.engine import analyze, analyze_trust, apply_safe_actions, build_snapshot, record_baseline
 from docgov.git_tools import content_at_ref
@@ -624,21 +625,21 @@ create policy media_read on storage.objects using (bucket_id = 'avatars');
         self.assertTrue(all(item["status"] == "review_required" for item in records.values()))
 
     def test_invalid_model_payload_is_rejected(self) -> None:
-        with self.assertRaises(ValueError):
-            _json_from_text('{"findings": "not-an-array"}')
+        with self.assertRaises(AgentContractError):
+            parse_json_object("the auditor could not decide")
 
     def test_model_failure_is_blocked_without_mutation(self) -> None:
         write(self.root / "docs/architecture/API.md", "# API\n")
         self.commit("canonical")
         snapshot = build_snapshot(self.root, self.catalog_path, ledger_path=self.ledger_path)
-        with patch("docgov.agent.invoke_strands", side_effect=TimeoutError("timed out")):
+        with patch("docgov.agent.run_graph", side_effect=TimeoutError("timed out")):
             decision = govern(snapshot, mode="review", enable_model=True)
         self.assertEqual(decision.result, "blocked")
         self.assertFalse(decision.changed)
         self.assertIn("failed closed", decision.error)
         self.assertFalse(self.ledger_path.exists())
 
-    def test_model_receives_only_bounded_relevant_markdown(self) -> None:
+    def test_each_agent_receives_only_its_own_bounded_document(self) -> None:
         catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
         catalog["documents"] = [
             {"path": "docs/architecture/API.md", "type": "contract"},
@@ -646,16 +647,21 @@ create policy media_read on storage.objects using (bucket_id = 'avatars');
             {"path": "docs/status/RELEASE.md", "type": "state"},
         ]
         write(self.catalog_path, json.dumps(catalog))
-        write(self.root / "docs/architecture/API.md", "A" * (MAX_MODEL_CONTEXT_CHARS * 2))
+        write(self.root / "docs/architecture/API.md", "A" * (MAX_DOCUMENT_CHARS * 2))
         write(self.root / "docs/architecture/OTHER.md", "# Related\n")
         write(self.root / "docs/status/RELEASE.md", "# Unrelated\n")
         base = self.commit("documents")
-        write(self.root / "docs/architecture/API.md", "B" * (MAX_MODEL_CONTEXT_CHARS * 2))
+        write(self.root / "docs/architecture/API.md", "B" * (MAX_DOCUMENT_CHARS * 2))
         head = self.commit("change API")
-        documents = _bounded_documents(build_snapshot(self.root, self.catalog_path, base, head))
-        self.assertIn("docs/architecture/API.md", documents)
-        self.assertNotIn("docs/status/RELEASE.md", documents)
-        self.assertLessEqual(sum(len(value) for value in documents.values()), MAX_MODEL_CONTEXT_CHARS)
+        snapshot = build_snapshot(self.root, self.catalog_path, base, head)
+        plan = plan_graph(snapshot, analyze(snapshot, mode="review"))
+        audited = {node.path for node in plan.audits}
+        self.assertIn("docs/architecture/API.md", audited)
+        self.assertNotIn("docs/status/RELEASE.md", audited)
+        self.assertLessEqual(len(plan.audits), MAX_AUDIT_DOCUMENTS)
+        for node in plan.audits:
+            # Privilege separation is per document: one agent, one slice.
+            self.assertLessEqual(len(node.claims), MAX_DOCUMENT_CHARS)
 
     def test_model_finding_cannot_remove_outside_new_markdown_boundary(self) -> None:
         write(self.root / "docs/architecture/API.md", "# API\n")

@@ -27,6 +27,9 @@ class DocumentRecord:
     last_verified_at: Optional[str] = None
     authority: str = "canonical"
     canonical_key: Optional[str] = None
+    # Deployment environments this document describes. Declaring one binds the
+    # document's trust to that environment matching the state Git produced.
+    environments: List[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, value: Dict[str, Any]) -> "DocumentRecord":
@@ -45,6 +48,7 @@ class DocumentRecord:
             ),
             authority=str(value.get("authority", "canonical")),
             canonical_key=value.get("canonical_key"),
+            environments=[str(item) for item in value.get("environments", [])],
         )
 
     def to_dict(self) -> Dict[str, Any]:

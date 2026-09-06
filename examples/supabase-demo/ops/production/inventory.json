@@ -1,0 +1,5 @@
+{
+  "environment": "production",
+  "note": "Demo fixture standing in for the production inventory a release produces.",
+  "edge_functions": ["health-check"]
+}

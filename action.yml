@@ -18,6 +18,10 @@ inputs:
     description: Ledger path relative to root
     required: false
     default: .docgov/ledger.jsonl
+  trust_state:
+    description: Trust state path relative to root, read by the docgov-mcp server
+    required: false
+    default: .docgov/trust.json
   base_sha:
     description: Base commit for review mode
     required: false
@@ -35,9 +39,11 @@ inputs:
     required: false
     default: "false"
   enable_model:
-    description: Enable the Strands Bedrock Governor
+    description: Enable the Strands multi-agent Governor graph on Amazon Bedrock
     required: false
-    default: "false"
+    # The graph is the headline configuration; the deterministic-only path is the
+    # documented fallback for fork pull requests and offline runs.
+    default: "true"
   model_id:
     description: Amazon Bedrock model or inference profile ID
     required: false
@@ -98,6 +104,7 @@ runs:
         DOCGOV_ROOT: ${{ inputs.root }}
         DOCGOV_CATALOG: ${{ inputs.catalog }}
         DOCGOV_LEDGER: ${{ inputs.ledger }}
+        DOCGOV_TRUST_STATE: ${{ inputs.trust_state }}
         DOCGOV_MODE: ${{ inputs.mode }}
         DOCGOV_BASE: ${{ inputs.base_sha }}
         DOCGOV_HEAD: ${{ inputs.head_sha }}
@@ -111,7 +118,7 @@ runs:
         AWS_REGION: ${{ inputs.aws_region }}
       run: |
         set +e
-        args=(--root "$DOCGOV_ROOT" --catalog "$DOCGOV_CATALOG" --ledger "$DOCGOV_LEDGER" --json)
+        args=(--root "$DOCGOV_ROOT" --catalog "$DOCGOV_CATALOG" --ledger "$DOCGOV_LEDGER" --trust-state "$DOCGOV_TRUST_STATE" --json)
         if [ "$DOCGOV_MODE" = "init" ]; then
           args+=(init)
           if [ "$DOCGOV_APPLY" = "true" ]; then args+=(--apply); fi

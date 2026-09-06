@@ -35,6 +35,21 @@ jobs:
           aws_region: us-west-2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Detect cross-environment drift (read-only)
+        # Read scope only. Doc Governor never deploys and never holds a
+        # production write credential; it emits a finding and the release
+        # workflow decides what to do with it.
+        if: vars.DOCGOV_SUPABASE_PROJECTS != ''
+        continue-on-error: true
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          DOCGOV_SUPABASE_PROJECTS: ${{ vars.DOCGOV_SUPABASE_PROJECTS }}
+        shell: bash
+        run: |
+          python -m docgov --json drift \
+            --supabase-projects "$DOCGOV_SUPABASE_PROJECTS" \
+            --collect --apply
+
       - name: Open maintenance PR for audit changes
         if: steps.docgov.outputs.changed == 'true'
         env:
