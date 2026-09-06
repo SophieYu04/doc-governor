@@ -5,7 +5,7 @@
       "canonical_path": null,
       "content_sha256": "2c38681e4b34dd9d4e2d5370cd40e9a8925a5738f0ebd69681f421bbbeffe3b6",
       "dependency_fingerprint": "bcb189c267bdd6623d34d93e86ae6f6a81e4ba435a889e81ef3293b3488545a5",
-      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "head_sha": "56a593fccd7c6492e0a3551d0f65d3a1526a17fb",
       "path": "AGENTS.md",
       "reason": "Governance control document is readable so the trust gate can bootstrap.",
       "scope": "current_fact",
@@ -35,16 +35,16 @@
       ],
       "type": "procedure",
       "usable": true,
-      "verified_at": "2026-09-06T04:56:36Z"
+      "verified_at": "2026-09-06T07:21:17Z"
     },
     {
       "canonical_path": null,
       "content_sha256": "cf4c55c306d1f508b60f452e2a9b3264e701794f6f9c73e4fe989d11179542af",
       "dependency_fingerprint": "3a6e3938552b0c4d2f173bd8c684a4365c653dccf9fb6bf3e5c779dc2c4cca6d",
-      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "head_sha": "56a593fccd7c6492e0a3551d0f65d3a1526a17fb",
       "path": "README.md",
-      "reason": "Document content changed after its latest successful verification.",
-      "scope": "untrusted",
+      "reason": "The document is current and its recorded evidence still matches.",
+      "scope": "current_fact",
       "source_pointers": [
         ".github/workflows/docgov-audit.yml",
         ".github/workflows/docgov-init.yml",
@@ -71,14 +71,14 @@
         "pyproject.toml"
       ],
       "type": "contract",
-      "usable": false,
-      "verified_at": "2026-09-06T05:12:33Z"
+      "usable": true,
+      "verified_at": "2026-09-06T07:21:17Z"
     },
     {
       "canonical_path": null,
       "content_sha256": "be55b3c03ad1f358d7aa045a9f9d304b022f76a5ab0884952a76be1f31feefdd",
       "dependency_fingerprint": "e315d8f08a30c7f62808bea153a3ce4d2c0e158bac8240b9f6095f96273fdbc3",
-      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "head_sha": "56a593fccd7c6492e0a3551d0f65d3a1526a17fb",
       "path": "examples/supabase-demo/docs/architecture/API.md",
       "reason": "The document is current and its recorded evidence still matches.",
       "scope": "current_fact",
@@ -88,13 +88,13 @@
       ],
       "type": "contract",
       "usable": true,
-      "verified_at": "2026-09-06T04:56:36Z"
+      "verified_at": "2026-09-06T07:21:17Z"
     },
     {
       "canonical_path": null,
       "content_sha256": "02ce5482a1628217c453c2e6262a1f13e05f671e1bcddf1aad41cc96371522b8",
       "dependency_fingerprint": "e315d8f08a30c7f62808bea153a3ce4d2c0e158bac8240b9f6095f96273fdbc3",
-      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "head_sha": "56a593fccd7c6492e0a3551d0f65d3a1526a17fb",
       "path": "examples/supabase-demo/docs/architecture/EDGE_FUNCTIONS.md",
       "reason": "The document is current and its recorded evidence still matches.",
       "scope": "current_fact",
@@ -104,26 +104,26 @@
       ],
       "type": "contract",
       "usable": true,
-      "verified_at": "2026-09-06T04:56:36Z"
+      "verified_at": "2026-09-06T07:21:17Z"
     },
     {
       "canonical_path": null,
       "content_sha256": "b13ff077861bb657ba461e4463c9568f4e3e07000fca51e8d78c59af5d9b33ab",
       "dependency_fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "head_sha": "56a593fccd7c6492e0a3551d0f65d3a1526a17fb",
       "path": "examples/supabase-demo/docs/public/ANNOUNCEMENT.md",
       "reason": "The document is current and its recorded evidence still matches.",
       "scope": "current_fact",
       "source_pointers": [],
       "type": "contract",
       "usable": true,
-      "verified_at": "2026-09-06T04:56:36Z"
+      "verified_at": "2026-09-06T07:21:17Z"
     },
     {
       "canonical_path": null,
       "content_sha256": "2da781e9d81a92294ba578a9d32ea9eda3eebf16c5287f43d0342cbf993cd88d",
       "dependency_fingerprint": "8acfd561a0ec18a5cab0a1b01c94b15d3fd410b1fda97bc1a6cd11f66424097a",
-      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "head_sha": "56a593fccd7c6492e0a3551d0f65d3a1526a17fb",
       "path": "examples/supabase-demo/docs/status/PRODUCTION.md",
       "reason": "The document is current and its recorded evidence still matches.",
       "scope": "current_fact",
@@ -132,13 +132,13 @@
       ],
       "type": "state",
       "usable": true,
-      "verified_at": "2026-09-06T04:56:36Z"
+      "verified_at": "2026-09-06T07:21:17Z"
     },
     {
       "canonical_path": null,
       "content_sha256": "e754e064f1c5d000ff13f3e24053997f2b57a7cd13efa239c1eaf7c7439abd04",
       "dependency_fingerprint": "a2e1109d20c595426acd0e3bd002fc4f0c4f99ab49a4fc2dc09dc3774deb3e1c",
-      "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
+      "head_sha": "56a593fccd7c6492e0a3551d0f65d3a1526a17fb",
       "path": "examples/supabase-demo/docs/status/RELEASE.md",
       "reason": "The document is current and its recorded evidence still matches.",
       "scope": "current_fact",
@@ -149,7 +149,7 @@
       ],
       "type": "state",
       "usable": true,
-      "verified_at": "2026-09-06T04:56:36Z"
+      "verified_at": "2026-09-06T07:21:17Z"
     }
   ],
   "drifted_environments": [],
