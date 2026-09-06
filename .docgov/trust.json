@@ -43,7 +43,7 @@
       "dependency_fingerprint": "3a6e3938552b0c4d2f173bd8c684a4365c653dccf9fb6bf3e5c779dc2c4cca6d",
       "head_sha": "56a593fccd7c6492e0a3551d0f65d3a1526a17fb",
       "path": "README.md",
-      "reason": "The document is current and its recorded evidence still matches.",
+      "reason": "Doc Governor blocked this document in its latest run: it conflicts with another document.",
       "scope": "current_fact",
       "source_pointers": [
         ".github/workflows/docgov-audit.yml",
@@ -71,7 +71,7 @@
         "pyproject.toml"
       ],
       "type": "contract",
-      "usable": true,
+      "usable": false,
       "verified_at": "2026-09-06T07:21:17Z"
     },
     {
