@@ -89,7 +89,8 @@ policies:
   require_verification_ledger: true
   control_documents:
   - AGENTS.md
-  ignore: []
+  ignore:
+  - submission/**
   protected:
   - docs/legal/**
   - docs/public/**

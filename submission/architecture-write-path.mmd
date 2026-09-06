@@ -1,0 +1,20 @@
+flowchart LR
+  A["GitHub pull request<br/>or daily audit"] --> B["Deterministic scan<br/><small>diff · hashes · TTL<br/>catalog · Supabase Advisor</small>"]
+  B --> G
+  subgraph G["Strands Graph on Amazon Bedrock"]
+    direction TB
+    A1["Evidence Auditor<br/><small>one per document · adversarial<br/>never sees the document's own status</small>"]
+    A2["Conflict Resolver<br/><small>only the conflicting documents</small>"]
+    A3["Contract Drafter<br/><small>contract documents only —<br/>cannot be constructed otherwise</small>"]
+    A1 --> A2
+    A1 --> A3
+  end
+  G --> R["Deterministic ruling<br/><small>every factual token must appear<br/>in a cited source file, or the whole<br/>draft is discarded</small>"]
+  B --> R
+  R ==> T[".docgov/trust.json"]
+  R --> L[".docgov/ledger.jsonl<br/><small>append-only</small>"]
+  R --> C["Correction commit<br/>+ decision card"]
+  classDef store fill:#fff4d6,stroke:#c99a2e,color:#4a3608,stroke-width:2px
+  classDef entry fill:#e8eef8,stroke:#4a6fa5,color:#12223a,stroke-width:2px
+  class T,L store
+  class A entry
