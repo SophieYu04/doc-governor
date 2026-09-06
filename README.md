@@ -373,7 +373,7 @@ python scripts/demo.py
 python -m docgov --json verify
 ```
 
-The test suite uses temporary repositories and a fake graph runner in place of Strands; no AWS credentials and no MCP SDK are needed. `tests/test_mcp_server.py` exercises the read path directly, including path traversal, symlink escape, content-leak, and fail-closed cases; `tests/test_trust_state.py` covers the determinism of the committed trust table.
+The test suite uses temporary repositories and needs no AWS credentials. `tests/test_strands_graph.py` drives the **real** `GraphBuilder`, the real agent nodes, the real `@tool` closures, the real `BeforeToolCallEvent` hook and the real edge conditions, replacing only the Bedrock network call with a `Model` that yields canned stream events — so a Strands API change fails in CI rather than the first time the action points at Bedrock. It does not prove that a live model returns a schema-valid answer; nothing short of a real Bedrock call does. `tests/test_mcp_server.py` exercises the read path directly, including path traversal, symlink escape, content-leak, and fail-closed cases; `tests/test_trust_state.py` covers the determinism of the committed trust table.
 
 ### Security invariants
 

@@ -886,21 +886,48 @@ def strands_runner(
                 callback_handler=None,
             )
 
-        audit_ids: List[str] = []
-        for node in plan.audits:
-            audited_path = node.path
-
+        # Each tool is built by a factory so the per-node binding is a real
+        # closure. Binding through a default argument instead would leak a
+        # leading-underscore parameter into the tool's generated schema, which
+        # Strands rejects.
+        def make_evidence_tool(audited_path: str) -> Any:
             @tool(name="evidence_for_document")
-            def evidence_for_document(path: str, _bound: str = audited_path) -> str:
+            def evidence_for_document(path: str) -> str:
                 """Return the recorded evidence for the document under audit."""
-                if path.replace("\\", "/") != _bound:
+                if path.replace("\\", "/") != audited_path:
                     return json.dumps({
                         "path": path,
                         "known": False,
                         "reason": "You may only request evidence for the document you were assigned.",
                     })
-                return json.dumps(evidence_payload(snapshot, _bound), ensure_ascii=False)
+                return json.dumps(evidence_payload(snapshot, audited_path), ensure_ascii=False)
 
+            return evidence_for_document
+
+        def make_source_tool(allowed: Tuple[str, ...]) -> Any:
+            @tool(name="declared_source")
+            def declared_source(path: str) -> str:
+                """Read a source file one of the documents in scope declares as a dependency."""
+                return json.dumps(declared_source_payload(snapshot, allowed, path), ensure_ascii=False)
+
+            return declared_source
+
+        def make_target_tool(drafted_path: str) -> Any:
+            @tool(name="target_document")
+            def target_document() -> str:
+                """Return the current text of the contract document being re-drafted."""
+                return json.dumps(
+                    {
+                        "path": drafted_path,
+                        "content": _clip(snapshot.files.get(drafted_path, ""), MAX_DOCUMENT_CHARS),
+                    },
+                    ensure_ascii=False,
+                )
+
+            return target_document
+
+        audit_ids: List[str] = []
+        for node in plan.audits:
             body = (
                 f"Document under audit: {node.path}\n"
                 "Its self-reported status has been removed on purpose.\n"
@@ -908,7 +935,7 @@ def strands_runner(
                 f"{node.claims}\n"
             )
             builder.add_node(
-                make_agent(EVIDENCE_AUDITOR, node.node_id, body, [evidence_for_document]),
+                make_agent(EVIDENCE_AUDITOR, node.node_id, body, [make_evidence_tool(node.path)]),
                 node.node_id,
             )
             builder.set_entry_point(node.node_id)
@@ -916,12 +943,6 @@ def strands_runner(
 
         for node in plan.conflicts:
             patterns = node.depends_on
-
-            @tool(name="declared_source")
-            def declared_source_conflict(path: str, _patterns: Tuple[str, ...] = patterns) -> str:
-                """Read a source file declared by one of the conflicting documents."""
-                return json.dumps(declared_source_payload(snapshot, _patterns, path), ensure_ascii=False)
-
             rendered = "\n\n".join(
                 f"--- {path} ---\n{text}" for path, text in sorted(node.documents.items())
             )
@@ -931,7 +952,7 @@ def strands_runner(
                 f"{rendered}\n"
             )
             builder.add_node(
-                make_agent(CONFLICT_RESOLVER, node.node_id, body, [declared_source_conflict]),
+                make_agent(CONFLICT_RESOLVER, node.node_id, body, [make_source_tool(patterns)]),
                 node.node_id,
             )
             for audit_id in audit_ids:
@@ -941,28 +962,18 @@ def strands_runner(
 
         for node in plan.drafts:
             patterns = node.depends_on
-            drafted_path = node.path
-
-            @tool(name="target_document")
-            def target_document(_bound: str = drafted_path) -> str:
-                """Return the current text of the contract document being re-drafted."""
-                return json.dumps(
-                    {"path": _bound, "content": _clip(snapshot.files.get(_bound, ""), MAX_DOCUMENT_CHARS)},
-                    ensure_ascii=False,
-                )
-
-            @tool(name="declared_source")
-            def declared_source_draft(path: str, _patterns: Tuple[str, ...] = patterns) -> str:
-                """Read a source file this document declares as a dependency."""
-                return json.dumps(declared_source_payload(snapshot, _patterns, path), ensure_ascii=False)
-
             body = (
                 f"Contract document: {node.path}\n"
                 f"You may cite only files matching: {', '.join(patterns)}\n"
                 "Re-draft the smallest wrong span, or return an empty proposed_span to decline.\n"
             )
             builder.add_node(
-                make_agent(CONTRACT_DRAFTER, node.node_id, body, [target_document, declared_source_draft]),
+                make_agent(
+                    CONTRACT_DRAFTER,
+                    node.node_id,
+                    body,
+                    [make_target_tool(node.path), make_source_tool(patterns)],
+                ),
                 node.node_id,
             )
             source = next(
