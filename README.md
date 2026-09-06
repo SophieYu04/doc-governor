@@ -62,6 +62,26 @@ The reconciler derives Edge Function names and JWT flags from the checked-out co
 
 This reconciles source facts, not environment claims: a Git commit does not assert what is deployed to staging or production. Source/config mismatches, protected paths, missing or ambiguous markers, and ordinary Markdown prose remain blocked or stale for human review.
 
+### Coding-agent repair before commit
+
+Required control documents such as `AGENTS.md` and `README.md` can use the `auto_repair_documents` Catalog policy. When one of their declared dependencies changes, Doc Governor emits a bounded `repair-prompt` instead of marking the document stale. The tracked `.githooks/pre-commit` hook sends that prompt to the developer's configured coding agent, runs the repository verification command, and records the exact repaired document and dependency hashes only after verification succeeds. A failed repair or test blocks the commit.
+
+The protocol is provider-neutral. `DOCGOV_REPAIR_COMMAND` may name any local coding-agent command that accepts a prompt on stdin and can edit the working tree. Codex is the default adapter; Claude, GitHub Copilot, a local model, or another agent can be selected without changing Doc Governor:
+
+**Codex, Claude, GitHub Copilot, or another coding agent writes the code; Doc Governor makes the configured agent repair required documents to a verifiable current state before commit.**
+
+```sh
+git config core.hooksPath .githooks
+
+# Default: Codex
+git commit -m "change implementation"
+
+# Any other stdin-capable coding agent
+DOCGOV_REPAIR_COMMAND='your-agent-command' git commit -m "change implementation"
+```
+
+This path uses the developer's existing coding-agent account. It does not invoke Amazon Bedrock, request AWS credentials, or create AWS usage. Set `DOCGOV_SKIP_REPAIR=1` only for recovery; CI governance still detects an unverified required document.
+
 **Why the recheck matters.** A developer commits code locally and `trust.json` is instantly older than `HEAD`. Without step 2 the server would serve stale content marked fresh. The recheck is pure hashing, so a document that was readable a second ago becomes unreadable the moment one of its declared dependencies changes — with no Doc Governor run in between.
 
 ## Quick start

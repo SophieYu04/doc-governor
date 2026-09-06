@@ -14,5 +14,6 @@ Doc Governor governs Markdown; it should not create Markdown merely to report th
 - Cross-environment drift detection is read-only. Doc Governor never deploys and never holds a production write credential; it emits a finding and the release workflow decides.
 - Never delete an existing document from `main`. Automatic deletion is limited to an exact duplicate newly added by the current PR, with no inbound links; human approval is required for a protected duplicate.
 - Keep Supabase source/config inventory and contract documents consistent. A mismatch is a blocker, not an invitation to invent documentation.
+- Required control documents listed in `auto_repair_documents` must stay `current`: before commit, emit a provider-neutral repair prompt for the developer's configured coding agent, run repository verification, then record the exact document and dependency hashes. If repair or verification fails, block the commit instead of marking those documents stale.
 - Changes to CLI contracts, the GitHub Action, document taxonomy, or lifecycle rules require updates to `README.md`, tests, and the relevant Catalog examples.
 - Run `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -v` before handing off changes.

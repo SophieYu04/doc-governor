@@ -51,6 +51,7 @@ class Catalog:
                 "documents": [],
                 "policies": {
                     "auto_remove_new_duplicates": True,
+                    "auto_repair_documents": ["AGENTS.md", "README.md"],
                     "protected": [
                         "docs/legal/**",
                         "docs/public/**",

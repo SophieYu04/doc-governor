@@ -559,6 +559,10 @@ def analyze(snapshot: RepositorySnapshot, mode: str = "review", run_id: Optional
     run_id = run_id or f"{snapshot.head_sha}-{mode}"
     findings: List[Finding] = []
     modified_paths: List[str] = []
+    auto_repair_patterns = [
+        str(item)
+        for item in snapshot.catalog.policies.get("auto_repair_documents", [])
+    ]
 
     configured_functions = snapshot.supabase.get("config_functions", [])
     source_functions = snapshot.supabase.get("source_functions", [])
@@ -697,12 +701,20 @@ def analyze(snapshot: RepositorySnapshot, mode: str = "review", run_id: Optional
                 and record.path not in supabase_sync_paths
                 and not has_matching_verification_baseline(snapshot, record)
             ):
+                auto_repair = any(
+                    matches_repo_glob(record.path, pattern)
+                    for pattern in auto_repair_patterns
+                )
                 findings.append(Finding(
-                    kind="stale",
-                    risk="low",
-                    action="mark_stale",
+                    kind="repair_required" if auto_repair else "stale",
+                    risk="high" if auto_repair else "low",
+                    action="block" if auto_repair else "mark_stale",
                     documents=[record.path],
-                    reason="A declared dependency changed after this document was verified.",
+                    reason=(
+                        "A required document must be repaired by the configured coding agent before commit."
+                        if auto_repair
+                        else "A declared dependency changed after this document was verified."
+                    ),
                     evidence=changed_dependency_evidence(snapshot, record),
                 ))
 

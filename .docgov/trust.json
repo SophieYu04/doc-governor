@@ -3,11 +3,11 @@
   "documents": [
     {
       "canonical_path": null,
-      "content_sha256": "2c38681e4b34dd9d4e2d5370cd40e9a8925a5738f0ebd69681f421bbbeffe3b6",
-      "dependency_fingerprint": "f6cec71b063995397d3f7ca10fa702b4f921240933aac27921500b3bd7f10e8e",
-      "head_sha": "566a1521792f776ee3debe7b2e81dde8c0a12ca8",
+      "content_sha256": "b3e90a0b79f4494b4b843a554b2230844e4d906004a8ca31c6d88d3061f52d68",
+      "dependency_fingerprint": "d60f9bb3a7a5851408f4fb47535428134f3b9b928cc31ee280ef83bb9362e4c4",
+      "head_sha": "bdf20adfdf4ef6ab5446661f517d820f6488bf1a",
       "path": "AGENTS.md",
-      "reason": "Catalog status is 'stale', not current.",
+      "reason": "Governance control document is readable so the trust gate can bootstrap.",
       "scope": "current_fact",
       "source_pointers": [
         ".github/workflows/docgov-audit.yml",
@@ -30,22 +30,23 @@
         "docgov/mcp_server.py",
         "docgov/models.py",
         "docgov/patterns.py",
+        "docgov/repair.py",
         "docgov/supabase.py",
         "docgov/supabase_remote.py",
         "docgov/trust_state.py"
       ],
       "type": "procedure",
-      "usable": false,
-      "verified_at": "2026-09-06T09:36:32Z"
+      "usable": true,
+      "verified_at": "2026-09-06T10:07:40Z"
     },
     {
       "canonical_path": null,
-      "content_sha256": "d948707a08847db9be7d75a2346fb913628164e9b34f3d75cea7611726a536fd",
-      "dependency_fingerprint": "7a2e24e9cb55a91869be82b3f35a558eed5b87475df52a7383490526a75a7428",
-      "head_sha": "566a1521792f776ee3debe7b2e81dde8c0a12ca8",
+      "content_sha256": "ea38b01d11dc9e89a74d9da0e54d6b15df1d345fd4a6ede8f14513f618a36c99",
+      "dependency_fingerprint": "71f32a5c49dfe316b848d5f2ca777b6a168091090d1a582dba6456ee66be94bd",
+      "head_sha": "bdf20adfdf4ef6ab5446661f517d820f6488bf1a",
       "path": "README.md",
-      "reason": "Document content changed after its latest successful verification.",
-      "scope": "untrusted",
+      "reason": "The document is current and its recorded evidence still matches.",
+      "scope": "current_fact",
       "source_pointers": [
         ".github/workflows/docgov-audit.yml",
         ".github/workflows/docgov-init.yml",
@@ -67,14 +68,15 @@
         "docgov/mcp_server.py",
         "docgov/models.py",
         "docgov/patterns.py",
+        "docgov/repair.py",
         "docgov/supabase.py",
         "docgov/supabase_remote.py",
         "docgov/trust_state.py",
         "pyproject.toml"
       ],
       "type": "contract",
-      "usable": false,
-      "verified_at": "2026-09-06T09:36:32Z"
+      "usable": true,
+      "verified_at": "2026-09-06T10:07:40Z"
     },
     {
       "canonical_path": null,

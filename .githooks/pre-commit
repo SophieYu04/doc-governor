@@ -1,0 +1,55 @@
+#!/bin/sh
+set -eu
+
+if [ "${DOCGOV_SKIP_REPAIR:-}" = "1" ]; then
+  exit 0
+fi
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+if [ -x .venv/bin/python ]; then
+  python=.venv/bin/python
+else
+  python=python3
+fi
+
+request=$(mktemp "${TMPDIR:-/tmp}/docgov-repair.XXXXXX")
+prompt=$(mktemp "${TMPDIR:-/tmp}/docgov-prompt.XXXXXX")
+documents=$(mktemp "${TMPDIR:-/tmp}/docgov-documents.XXXXXX")
+trap 'rm -f "$request" "$prompt" "$documents"' EXIT
+
+PYTHONDONTWRITEBYTECODE=1 "$python" -m docgov --json repair-prompt > "$request"
+"$python" - "$request" "$prompt" "$documents" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    value = json.load(handle)
+with open(sys.argv[2], "w", encoding="utf-8") as handle:
+    handle.write(value.get("prompt", ""))
+with open(sys.argv[3], "w", encoding="utf-8") as handle:
+    for path in value.get("documents", []):
+        handle.write(f"{path}\n")
+PY
+
+if [ ! -s "$documents" ]; then
+  exit 0
+fi
+
+agent_command=${DOCGOV_REPAIR_COMMAND:-'codex exec --approve-for-me --sandbox workspace-write -C . -'}
+printf 'Doc Governor: repairing required documentation with the configured coding agent.\n' >&2
+sh -c "$agent_command" < "$prompt"
+
+set --
+while IFS= read -r document; do
+  [ -n "$document" ] || continue
+  set -- "$@" "$document"
+done < "$documents"
+
+git add -- "$@"
+verify_command=${DOCGOV_VERIFY_COMMAND:-"PYTHONDONTWRITEBYTECODE=1 $python -m unittest discover -v"}
+sh -c "$verify_command"
+
+PYTHONDONTWRITEBYTECODE=1 "$python" -m docgov --json baseline --approved "$@" > /dev/null
+git add -- "$@" .docgov/ledger.jsonl .docgov/trust.json

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 import subprocess
 import sys
 import tempfile
@@ -68,6 +69,79 @@ class ActionContractTests(unittest.TestCase):
         self.assertIn('json.load(handle).get("modified_paths", [])', source)
         self.assertNotIn("git add .", source)
         self.assertIn('gh pr create --base main', source)
+
+    def test_pre_commit_repair_hook_is_provider_neutral_and_verifies_before_baseline(self) -> None:
+        source = (ROOT / ".githooks/pre-commit").read_text(encoding="utf-8")
+        self.assertIn("DOCGOV_REPAIR_COMMAND", source)
+        self.assertIn("codex exec --approve-for-me --sandbox workspace-write", source)
+        self.assertNotIn("AWS", source)
+        self.assertNotIn("Bedrock", source)
+        self.assertLess(source.index('sh -c "$verify_command"'), source.index("baseline --approved"))
+        self.assertIn("git add -- \"$@\" .docgov/ledger.jsonl .docgov/trust.json", source)
+
+    def test_pre_commit_hook_repairs_stages_and_baselines_required_document(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Doc Governor Test"], cwd=root, check=True)
+            (root / ".docgov").mkdir()
+            (root / "src").mkdir()
+            (root / ".docgov/catalog.yaml").write_text(yaml.safe_dump({
+                "version": 1,
+                "taxonomy": {"procedure": ["AGENTS.md"]},
+                "documents": [{
+                    "path": "AGENTS.md",
+                    "type": "procedure",
+                    "status": "current",
+                    "depends_on": ["src/**"],
+                }],
+                "policies": {
+                    "auto_repair_documents": ["AGENTS.md"],
+                    "require_verification_ledger": True,
+                },
+            }), encoding="utf-8")
+            (root / "AGENTS.md").write_text("# Instructions\n\nInterface version 1.\n", encoding="utf-8")
+            (root / "src/interface.py").write_text("VERSION = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-qm", "initial"], cwd=root, check=True)
+            subprocess.run([
+                sys.executable, "-m", "docgov", "--root", str(root),
+                "baseline", "--approved", "AGENTS.md",
+            ], cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "add", ".docgov"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-qm", "baseline"], cwd=root, check=True)
+
+            agent = root / "fake-agent"
+            agent.write_text(
+                "#!/bin/sh\nprintf '\\nInterface version 2.\\n' >> AGENTS.md\n",
+                encoding="utf-8",
+            )
+            agent.chmod(0o755)
+            (root / "src/interface.py").write_text("VERSION = 2\n", encoding="utf-8")
+            subprocess.run(["git", "add", "src/interface.py"], cwd=root, check=True)
+            env = os.environ.copy()
+            env["DOCGOV_REPAIR_COMMAND"] = str(agent)
+            env["DOCGOV_VERIFY_COMMAND"] = "true"
+            env["PATH"] = f"{Path(sys.executable).parent}:{env.get('PATH', '')}"
+
+            completed = subprocess.run(
+                ["sh", str(ROOT / ".githooks/pre-commit")],
+                cwd=root,
+                env=env,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            staged = subprocess.check_output(
+                ["git", "diff", "--cached", "--name-only"], cwd=root, text=True
+            ).splitlines()
+            self.assertIn("AGENTS.md", staged)
+            self.assertIn(".docgov/ledger.jsonl", staged)
+            self.assertIn(".docgov/trust.json", staged)
+            self.assertIn("Interface version 2.", (root / "AGENTS.md").read_text(encoding="utf-8"))
 
     def test_aws_templates_are_repository_scoped_and_cover_profile_destinations(self) -> None:
         trust = (ROOT / "infra/aws/github-oidc-trust-policy.json").read_text(encoding="utf-8")

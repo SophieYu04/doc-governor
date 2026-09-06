@@ -17,6 +17,7 @@ from docgov.engine import analyze, analyze_trust, apply_safe_actions, build_snap
 from docgov.git_tools import content_at_ref
 from docgov.ledger import Ledger
 from docgov.models import Evidence, Finding, GovernanceDecision
+from docgov.repair import build_repair_prompt, repair_candidates
 from docgov.supabase import inventory
 
 
@@ -77,6 +78,43 @@ class EngineTests(unittest.TestCase):
         self.assertIn(".docgov/ledger.jsonl", applied.modified_paths)
         self.assertEqual((self.root / "docs/architecture/API.md").read_text(encoding="utf-8"), canonical)
         self.assertEqual(len(Ledger(self.ledger_path).entries()), 1)
+
+    def test_required_document_becomes_repair_task_instead_of_stale(self) -> None:
+        catalog = json.loads(self.catalog_path.read_text(encoding="utf-8"))
+        catalog["documents"] = [{
+            "path": "AGENTS.md",
+            "type": "procedure",
+            "status": "current",
+            "depends_on": ["src/**"],
+        }]
+        catalog["policies"]["auto_repair_documents"] = ["AGENTS.md"]
+        write(self.catalog_path, json.dumps(catalog))
+        write(self.root / "AGENTS.md", "# Instructions\n\nUse the current interface.\n")
+        write(self.root / "src/interface.py", "VERSION = 1\n")
+        self.commit("initial control document")
+        baseline = record_baseline(
+            build_snapshot(self.root, self.catalog_path, ledger_path=self.ledger_path),
+            self.ledger_path,
+            approved=True,
+            documents=["AGENTS.md"],
+        )
+        self.assertEqual(baseline.result, "changed")
+        self.commit("record control baseline")
+        write(self.root / "src/interface.py", "VERSION = 2\n")
+
+        snapshot = build_snapshot(self.root, self.catalog_path, ledger_path=self.ledger_path)
+        decision = analyze(snapshot)
+
+        repair = next(item for item in decision.findings if item.documents == ["AGENTS.md"])
+        self.assertEqual((repair.kind, repair.action, repair.risk), ("repair_required", "block", "high"))
+        applied = apply_safe_actions(snapshot, decision, self.catalog_path, self.ledger_path)
+        self.assertEqual(Catalog.load(self.catalog_path).record_for("AGENTS.md").status, "current")
+        self.assertFalse(applied.changed)
+        self.assertEqual([record.path for record in repair_candidates(snapshot)], ["AGENTS.md"])
+        prompt = build_repair_prompt(snapshot)
+        self.assertIn("AGENTS.md", prompt)
+        self.assertIn("src/interface.py", prompt)
+        self.assertNotIn("Codex", prompt)
 
     def test_additive_duplicate_merges_content_and_rewrites_changed_links(self) -> None:
         canonical = "# API\n\nStable contract.\n"

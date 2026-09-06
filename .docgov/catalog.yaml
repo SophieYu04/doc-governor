@@ -19,7 +19,7 @@ documents:
 - path: AGENTS.md
   type: procedure
   owner: maintainers
-  status: stale
+  status: current
   depends_on:
   - docgov/**
   - action.yml
@@ -86,6 +86,9 @@ documents:
   - production
 policies:
   auto_remove_new_duplicates: true
+  auto_repair_documents:
+  - AGENTS.md
+  - README.md
   require_verification_ledger: true
   control_documents:
   - AGENTS.md

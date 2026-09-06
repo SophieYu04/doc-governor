@@ -13,6 +13,7 @@ from .engine import analyze_trust, apply_safe_actions, build_snapshot, record_ba
 from .git_tools import current_sha, tracked_paths
 from .ledger import utc_now
 from .models import DocumentRecord, GovernanceDecision
+from .repair import build_repair_prompt, repair_candidates
 from .supabase_remote import (
     DEFAULT_EVIDENCE_DIR,
     PROMOTION_ACTION,
@@ -355,6 +356,12 @@ def main(argv: List[str] | None = None) -> int:
     baseline_parser.add_argument("--json", action="store_true", dest="sub_json")
     baseline_parser.add_argument("paths", nargs="*")
 
+    repair_parser = subparsers.add_parser(
+        "repair-prompt",
+        help="Emit a provider-neutral prompt for impacted required documents",
+    )
+    repair_parser.add_argument("--json", action="store_true", dest="sub_json")
+
     args = parser.parse_args(argv)
     args.as_json = bool(args.as_json or getattr(args, "sub_json", False))
     root = Path(args.root).resolve()
@@ -454,6 +461,17 @@ def main(argv: List[str] | None = None) -> int:
         )
         _print(decision, args.as_json)
         return _exit_code(decision)
+    if args.command == "repair-prompt":
+        prompt = build_repair_prompt(snapshot)
+        if args.as_json:
+            print(json.dumps({
+                "documents": [record.path for record in repair_candidates(snapshot)],
+                "prompt": prompt,
+                "required": bool(prompt),
+            }, ensure_ascii=False))
+        else:
+            print(prompt, end="")
+        return 0
     if args.command == "baseline":
         decision = record_baseline(
             snapshot,
@@ -461,6 +479,10 @@ def main(argv: List[str] | None = None) -> int:
             approved=args.approved,
             documents=args.paths or None,
         )
+        if decision.changed:
+            decision = _refresh_trust_state(
+                root, catalog_path, ledger_path, trust_state_path, decision
+            )
         _print(decision, args.as_json)
         return _exit_code(decision)
 
