@@ -4,7 +4,7 @@
     {
       "canonical_path": null,
       "content_sha256": "2c38681e4b34dd9d4e2d5370cd40e9a8925a5738f0ebd69681f421bbbeffe3b6",
-      "dependency_fingerprint": "b73fa1b7dd6ea12edc6b2c779e255112d0f031726cb0c0dc8c12bc300a807193",
+      "dependency_fingerprint": "bcb189c267bdd6623d34d93e86ae6f6a81e4ba435a889e81ef3293b3488545a5",
       "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
       "path": "AGENTS.md",
       "reason": "Governance control document is readable so the trust gate can bootstrap.",
@@ -39,12 +39,12 @@
     },
     {
       "canonical_path": null,
-      "content_sha256": "24f544d8a65324c9c4dd82751f7e7da1dfa650f131418e678ce5662ec4dc6708",
-      "dependency_fingerprint": "97846f4d14203ed7548996922b1bdc00b5fddc9f33e1affffc74041b4870dff8",
+      "content_sha256": "cf4c55c306d1f508b60f452e2a9b3264e701794f6f9c73e4fe989d11179542af",
+      "dependency_fingerprint": "3a6e3938552b0c4d2f173bd8c684a4365c653dccf9fb6bf3e5c779dc2c4cca6d",
       "head_sha": "234a0543ba6f4c2562be436de8bd3d4f9b5e01a5",
       "path": "README.md",
-      "reason": "Doc Governor blocked this document in its latest run: it conflicts with another document.",
-      "scope": "current_fact",
+      "reason": "Document content changed after its latest successful verification.",
+      "scope": "untrusted",
       "source_pointers": [
         ".github/workflows/docgov-audit.yml",
         ".github/workflows/docgov-init.yml",
