@@ -22,4 +22,16 @@ jobs:
         run: python -c 'from strands import Agent, tool; from strands.models import BedrockModel; print(Agent, tool, BedrockModel)'
       - run: python -m pytest -q
       - run: python scripts/demo.py
-      - run: python -m docgov --root . --json verify --strict
+      - name: Verify trust gate
+        shell: bash
+        run: |
+          set +e
+          python -m docgov --root . --json verify --strict > "$RUNNER_TEMP/docgov-verify.json"
+          status=$?
+          cat "$RUNNER_TEMP/docgov-verify.json"
+          if [ "${GITHUB_HEAD_REF:-}" = "demo/ai-document-drift" ]; then
+            test "$status" -eq 2
+            python -c 'import json,sys; assert json.load(open(sys.argv[1]))["result"] == "action_required"' "$RUNNER_TEMP/docgov-verify.json"
+          else
+            test "$status" -eq 0
+          fi

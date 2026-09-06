@@ -2,4 +2,4 @@
 
 Status: Current
 
-This reviewed copy exists only to demonstrate the protected-document approval boundary.
+This unreviewed public claim should never be silently accepted by an agent.

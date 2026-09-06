@@ -21,6 +21,35 @@ def commit(root: Path, message: str) -> str:
 def run_demo(destination: Path, *, enable_model: bool = False) -> dict[str, object]:
     source = Path(__file__).resolve().parents[1] / "examples" / "supabase-demo"
     shutil.copytree(source, destination, dirs_exist_ok=True)
+
+    # The public PR fixture intentionally contains the drift we want to show.
+    # Reset those scenario-only files before building the independent demo
+    # repository so the script remains reproducible when run from that branch.
+    scenario_duplicate = destination / "docs" / "architecture" / "API-notes.md"
+    if scenario_duplicate.exists():
+        scenario_duplicate.unlink()
+    scenario_function = destination / "supabase" / "functions" / "send-email"
+    if scenario_function.exists():
+        shutil.rmtree(scenario_function)
+    scenario_config = destination / "supabase" / "config.toml"
+    config_lines = scenario_config.read_text(encoding="utf-8").splitlines()
+    cleaned_config: list[str] = []
+    skip_section = False
+    for line in config_lines:
+        if line.startswith("[functions."):
+            skip_section = line.strip() == "[functions.send-email]"
+        if not skip_section:
+            cleaned_config.append(line)
+    scenario_config.write_text(
+        "\n".join(cleaned_config) + "\n",
+        encoding="utf-8",
+    )
+    (destination / "docs" / "status" / "RELEASE.md").write_text(
+        (destination / "docs" / "status" / "RELEASE.md")
+        .read_text(encoding="utf-8")
+        .replace("2026-09-05", "2026-09-03"),
+        encoding="utf-8",
+    )
     subprocess.run(["git", "init", "-q"], cwd=destination, check=True)
     git(destination, "config", "user.name", "Doc Governor Demo")
     git(destination, "config", "user.email", "demo@example.com")
