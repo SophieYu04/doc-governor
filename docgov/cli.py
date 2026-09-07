@@ -34,6 +34,13 @@ from .trust_state import (
     documents_for_environment,
     write_trust_state,
 )
+from .verification import (
+    VerificationError,
+    import_verifications,
+    list_verifications,
+    run_verification,
+    verification_status,
+)
 
 
 def _catalog_path(root: Path, value: str | None) -> Path:
@@ -362,12 +369,71 @@ def main(argv: List[str] | None = None) -> int:
     )
     repair_parser.add_argument("--json", action="store_true", dest="sub_json")
 
+    verification_parser = subparsers.add_parser(
+        "verification",
+        help="Run, import, and query reusable verification evidence",
+    )
+    verification_parser.add_argument("--json", action="store_true", dest="sub_json")
+    verification_commands = verification_parser.add_subparsers(
+        dest="verification_command", required=True
+    )
+    verification_run = verification_commands.add_parser("run")
+    verification_run.add_argument("id")
+    verification_run.add_argument("--json", action="store_true", dest="sub_json")
+    verification_import = verification_commands.add_parser("import")
+    verification_import.add_argument("file")
+    verification_import.add_argument("--json", action="store_true", dest="sub_json")
+    verification_list = verification_commands.add_parser("list")
+    verification_list.add_argument("--json", action="store_true", dest="sub_json")
+    verification_status_parser = verification_commands.add_parser("status")
+    verification_status_parser.add_argument("id")
+    verification_status_parser.add_argument("--json", action="store_true", dest="sub_json")
+
     args = parser.parse_args(argv)
     args.as_json = bool(args.as_json or getattr(args, "sub_json", False))
     root = Path(args.root).resolve()
     catalog_path = _catalog_path(root, args.catalog)
     ledger_path = _ledger_path(root, args.ledger)
     trust_state_path = _trust_state_path(root, args.trust_state)
+
+    if args.command == "verification":
+        try:
+            catalog = Catalog.load(catalog_path)
+            ledger = Ledger(ledger_path)
+            if args.verification_command == "run":
+                event = run_verification(root, catalog, ledger, args.id)
+                status = verification_status(root, catalog, ledger, args.id)
+                value: Dict[str, Any] = {
+                    "result": "pass" if status["reusable"] else "action_required",
+                    "recorded_event": {
+                        key: event.get(key)
+                        for key in (
+                            "event_id", "verification", "result", "source_commit",
+                            "started_at", "completed_at", "exit_code", "summary",
+                            "model_used", "model_trace",
+                        )
+                        if key in event
+                    },
+                    "verification": status,
+                }
+            elif args.verification_command == "import":
+                payload = json.loads(Path(args.file).read_text(encoding="utf-8"))
+                value = import_verifications(ledger, payload)
+            elif args.verification_command == "list":
+                value = {"result": "pass", "verifications": list_verifications(root, catalog, ledger)}
+            else:
+                status = verification_status(root, catalog, ledger, args.id)
+                value = {
+                    "result": "pass" if status.get("known") else "action_required",
+                    "verification": status,
+                }
+        except (OSError, json.JSONDecodeError, ValueError, VerificationError) as exc:
+            value = {"result": "blocked", "error": f"Verification operation failed closed: {exc}"}
+        if args.as_json:
+            print(json.dumps(value, ensure_ascii=False, sort_keys=True))
+        else:
+            print(json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True))
+        return 2 if value.get("result") in {"action_required", "blocked"} else 0
 
     if args.command == "drift":
         try:

@@ -30,6 +30,7 @@ from typing import Any, Dict, List
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from docgov.mcp_server import DocumentSupply, SupplyConfig  # noqa: E402
+from docgov.mcp_server import dispatch  # noqa: E402
 from docgov.supabase_remote import build_evidence_snapshot, write_evidence  # noqa: E402
 from docgov.trust_state import DEFAULT_TRUST_STATE_PATH  # noqa: E402
 
@@ -127,6 +128,35 @@ def run_demo(destination: Path, *, enable_model: bool = False, mcp_stdio: bool =
     for record in catalog["documents"]:
         if record["path"] == "docs/status/PRODUCTION.md":
             record["last_verified_at"] = utc_now()
+    runner = destination / "checks" / "counted_check.py"
+    runner.parent.mkdir(parents=True, exist_ok=True)
+    runner.write_text(
+        "from pathlib import Path\n"
+        "import sys\n"
+        "directory = Path('.demo-runs')\n"
+        "directory.mkdir(exist_ok=True)\n"
+        "counter = directory / sys.argv[1]\n"
+        "count = int(counter.read_text()) if counter.exists() else 0\n"
+        "counter.write_text(str(count + 1))\n",
+        encoding="utf-8",
+    )
+    catalog["verifications"] = [
+        {
+            "id": "api-check",
+            "command": [sys.executable, "checks/counted_check.py", "api-check"],
+            "workdir": ".",
+            "inputs": ["checks/counted_check.py", "supabase/functions/**"],
+            "depends_on": ["supabase/config.toml"],
+            "related_documents": ["docs/architecture/API.md"],
+        },
+        {
+            "id": "production-check",
+            "command": [sys.executable, "checks/counted_check.py", "production-check"],
+            "workdir": ".",
+            "inputs": ["checks/counted_check.py", "ops/production/**"],
+            "related_documents": ["docs/status/PRODUCTION.md"],
+        },
+    ]
     catalog_path.write_text(json.dumps(catalog, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
     public_doc = destination / "docs" / "public" / "ANNOUNCEMENT.md"
@@ -232,6 +262,47 @@ def run_demo(destination: Path, *, enable_model: bool = False, mcp_stdio: bool =
     if read(supply, "docs/status/PRODUCTION.md", "5-production-after-drift")["status"] == "ok":
         raise RuntimeError("A drifted production must make its status document unreadable")
 
+    # --- step 6: Agent A records work; Agent B reuses it without rerunning --
+    for verification_id in ("api-check", "production-check"):
+        completed = docgov(destination, "verification", "run", verification_id)
+        if completed.returncode != 0:
+            raise RuntimeError(f"Verification {verification_id} failed: {completed.stdout}{completed.stderr}")
+    agent_b = supply_for(destination)  # a fresh supply instance, like a new MCP consumer
+    before_handoff = dispatch(agent_b, "list_verifications", {})
+    if not all(item["reusable"] for item in before_handoff["verifications"]):
+        raise RuntimeError(f"Agent B could not reuse Agent A's results: {before_handoff}")
+    counts_before = {
+        identifier: int((destination / ".demo-runs" / identifier).read_text(encoding="utf-8"))
+        for identifier in ("api-check", "production-check")
+    }
+    mcp_before = run_stdio_verification_session(destination) if mcp_stdio else None
+    health_source = destination / "supabase" / "functions" / "health-check" / "index.ts"
+    health_source.write_text(
+        health_source.read_text(encoding="utf-8") + "\n// dependency changed after verification\n",
+        encoding="utf-8",
+    )
+    after_handoff = dispatch(agent_b, "list_verifications", {})
+    mcp_after = run_stdio_verification_session(destination) if mcp_stdio else None
+    by_id = {item["id"]: item for item in after_handoff["verifications"]}
+    if by_id["api-check"]["reusable"] or not by_id["production-check"]["reusable"]:
+        raise RuntimeError(f"Verification invalidation crossed scope boundaries: {after_handoff}")
+    counts_after = {
+        identifier: int((destination / ".demo-runs" / identifier).read_text(encoding="utf-8"))
+        for identifier in ("api-check", "production-check")
+    }
+    if counts_after != counts_before:
+        raise RuntimeError("Agent B reran a verification while querying reusable evidence")
+    handoff: Dict[str, Any] = {
+        "agent_a_execution_counts": counts_before,
+        "agent_b_before_change": before_handoff,
+        "agent_b_after_change": after_handoff,
+        "agent_b_execution_counts": counts_after,
+    }
+
+    if mcp_stdio:
+        handoff["mcp_before_change"] = mcp_before
+        handoff["mcp_after_change"] = mcp_after
+
     listing = supply.list_documents(usable_only=False)
     if not any(item["usable"] is False and item["reason"] for item in listing):
         raise RuntimeError("Unusable documents must be listed with a reason")
@@ -239,7 +310,13 @@ def run_demo(destination: Path, *, enable_model: bool = False, mcp_stdio: bool =
     if mcp_stdio:
         reads.extend(run_stdio_session(destination))
 
-    return {"decision": decision, "drift": drift_decision, "reads": reads, "listing": listing}
+    return {
+        "decision": decision,
+        "drift": drift_decision,
+        "reads": reads,
+        "listing": listing,
+        "handoff": handoff,
+    }
 
 
 def run_stdio_session(destination: Path) -> List[Dict[str, Any]]:  # pragma: no cover - optional dep
@@ -271,6 +348,27 @@ def run_stdio_session(destination: Path) -> List[Dict[str, Any]]:  # pragma: no 
                         "served_characters": len(payload.get("content") or ""),
                     })
         return collected
+
+    return asyncio.run(session())
+
+
+def run_stdio_verification_session(destination: Path) -> Dict[str, Any]:  # pragma: no cover
+    """Open a new MCP session and query evidence without executing a command."""
+    import asyncio
+
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    async def session() -> Dict[str, Any]:
+        parameters = StdioServerParameters(
+            command=sys.executable,
+            args=["-m", "docgov.mcp_server", "--root", str(destination)],
+        )
+        async with stdio_client(parameters) as (reader, writer):
+            async with ClientSession(reader, writer) as client:
+                await client.initialize()
+                result = await client.call_tool("list_verifications", {})
+                return json.loads(result.content[0].text)
 
     return asyncio.run(session())
 
@@ -316,6 +414,7 @@ def main() -> int:
         "documents": [
             {"path": item["path"], "usable": item["usable"]} for item in outcome["listing"]
         ],
+        "verification_handoff": outcome["handoff"],
     }, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 

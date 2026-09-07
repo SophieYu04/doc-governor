@@ -104,7 +104,7 @@ jobs:
   govern:
     runs-on: ubuntu-latest
     steps:
-      - uses: SophieYu04/doc-governor@v0.3.0
+      - uses: SophieYu04/doc-governor@v0.4.0
         with:
           mode: review
           base_sha: ${{ github.event.pull_request.base.sha }}
@@ -130,7 +130,7 @@ Each PR receives an idempotent GitHub Check and one updatable decision-card comm
 
 ## Connect your coding agent
 
-`docgov-mcp` is a read-only MCP server over stdio. Point Codex, Claude Code, or Cursor at it and the agent reads documentation through the trust gate instead of off disk.
+`docgov-mcp` is a read-only MCP server over stdio. Point Codex, Claude Code, or Cursor at it and the agent reads documentation through the trust gate instead of off disk. The same server also tells a new agent which recorded test or demo results it can reuse; those queries never execute a command.
 
 ```sh
 python -m pip install 'doc-governor[mcp]'
@@ -187,9 +187,35 @@ A refusal always carries an alternative, because a bare error just sends the age
 
 `list_documents` deliberately lists unusable documents. Hiding them makes the consuming agent go read the raw file to find out what it is missing.
 
+### Reusable verification evidence
+
+Document trust and command verification are separate. A document marked `current` does not mean the test suite or MCP demo passed. Register each reusable check in the Catalog with an argv list, working directory, content inputs, dependencies, related documents, and the packages whose versions affect the result:
+
+```yaml
+verifications:
+  - id: unit-tests
+    command: [python3, -m, unittest, discover, -v]
+    workdir: .
+    inputs: [docgov/**, tests/**, pyproject.toml]
+    depends_on: [.github/workflows/**]
+    related_documents: [AGENTS.md, README.md]
+    environment:
+      packages: [PyYAML, mcp, strands-agents]
+```
+
+Agent A records a result with `docgov verification run unit-tests`. Agent B uses `docgov verification list`, `docgov verification status unit-tests`, or the read-only MCP tools `list_verifications` and `verification_status`. A result is reusable only while the definition, command, complete matched file set, file hashes, operating system, architecture, Python version, and declared package versions all match. Added, deleted, modified, and untracked matching files invalidate only the affected checks and are returned with the exact rerun argv. An incomplete imported environment and a check whose inputs changed while it ran are never reusable.
+
+Existing CI evidence can be appended without rewriting history:
+
+```sh
+docgov verification import /path/to/verification-event.json
+```
+
+Imports retain their original commit, timestamps, input hashes, environment, source URL, and source digest. Missing facts remain unknown. Importing the same event twice is idempotent, and a newer failure cannot be hidden by an older success. The ledger stores output byte counts and a digest rather than raw logs; a model trace is reduced to agent, tool, and model identifiers.
+
 ### MCP security properties
 
-- The server has **no write tool, no shell tool, and no network egress**. It reads files and one JSON table.
+- The server has **no write tool, no shell tool, and no network egress**. It reads repository files, the trust table, the Catalog, and append-only ledger evidence.
 - It rejects absolute paths, `..` segments, Windows drive letters, URL schemes, NUL bytes, non-Markdown suffixes, and symlinks that resolve outside the repository root.
 - A refused document leaks **no content at all** — not the first line, not a summary, not a quoted claim in the reason string. `list_documents` summarizes only documents it would actually serve.
 - Startup fails loudly when `.docgov/trust.json` is missing or declares an unknown schema version. It never falls back to serving everything.
@@ -234,6 +260,10 @@ SUPABASE_ACCESS_TOKEN=... docgov audit --apply \
 docgov verify
 docgov verify --strict docs/architecture/API.md
 docgov drift --environments staging,production
+docgov verification run unit-tests
+docgov verification status unit-tests
+docgov verification list
+docgov verification import /path/to/verification-event.json
 docgov-mcp --root .
 ```
 
@@ -371,7 +401,7 @@ Run the complete deterministic scenario locally:
 python scripts/demo.py
 ```
 
-The fixture simulates a coding agent adding an Edge Function, creating a duplicate API document, refreshing a State date without evidence, and changing protected public copy. Doc Governor synchronizes the source-backed API and Edge inventory, removes the duplicate, preserves the protected file, and returns `action_required` for the two human decisions.
+The fixture simulates a coding agent adding an Edge Function, creating a duplicate API document, refreshing a State date without evidence, and changing protected public copy. Doc Governor synchronizes the source-backed API and Edge inventory, removes the duplicate, preserves the protected file, and returns `action_required` for the protected change. The State document remains refused because no verification evidence supports it.
 
 It then does the part that matters — it goes on to read through the supply layer:
 
@@ -380,6 +410,7 @@ It then does the part that matters — it goes on to read through the supply lay
 3. `get_document("docs/architecture/API-notes.md")` is refused, but names the canonical document that absorbed it.
 4. **A dependency file is touched and the same trusted document is immediately refused — with no Doc Governor run in between.** The fingerprint recheck caught it.
 5. Production drifts from the state Git produced. `docgov drift` raises `environment_drift`, and `docs/status/PRODUCTION.md` flips from readable to refused as a consequence.
+6. Agent A records two scoped checks. Agent B starts with a fresh supply session and reuses both without executing them. After one source dependency changes, only `api-check` becomes non-reusable; `production-check` remains reusable, and the counters prove neither query reran a command.
 
 Step 4 is the whole argument in one move: nothing re-ran, and the answer still changed.
 
@@ -391,7 +422,7 @@ After configuring AWS credentials with Bedrock access, run the identical scenari
 python scripts/demo.py --enable-model --keep
 ```
 
-The JSON output proves `model_used: true` and shows the redacted per-agent tool trace. The deterministic run remains the zero-credential path for judges and contributors.
+A successful JSON result has `model_used: true` and a redacted per-agent tool trace. Do not claim a live Bedrock run unless that result has been recorded as verification evidence. The deterministic run remains the zero-credential path for judges and contributors.
 
 ## Development and tests
 
@@ -401,7 +432,7 @@ python scripts/demo.py
 python -m docgov --json verify
 ```
 
-The test suite uses temporary repositories and needs no AWS credentials. `tests/test_strands_graph.py` drives the **real** `GraphBuilder`, the real agent nodes, the real `@tool` closures, the real `BeforeToolCallEvent` hook and the real edge conditions, replacing only the Bedrock network call with a `Model` that yields canned stream events — so a Strands API change fails in CI rather than the first time the action points at Bedrock. It does not prove that a live model returns a schema-valid answer; nothing short of a real Bedrock call does. `tests/test_mcp_server.py` exercises the read path directly, including path traversal, symlink escape, content-leak, and fail-closed cases; `tests/test_trust_state.py` covers the determinism of the committed trust table.
+The current local verification records 182 passing tests. The suite uses temporary repositories and needs no AWS credentials. `tests/test_strands_graph.py` drives the **real** `GraphBuilder`, the real agent nodes, the real `@tool` closures, the real `BeforeToolCallEvent` hook and the real edge conditions, replacing only the Bedrock network call with a `Model` that yields canned stream events — so a Strands API change fails in CI rather than the first time the action points at Bedrock. It does not prove that a live model returns a schema-valid answer; nothing short of a recorded successful Bedrock verification does. `tests/test_mcp_server.py` exercises the read path directly, including path traversal, symlink escape, content-leak, and fail-closed cases; `tests/test_verification.py` covers scoped reuse and invalidation; `tests/test_trust_state.py` covers the determinism of the committed trust table.
 
 ### Security invariants
 

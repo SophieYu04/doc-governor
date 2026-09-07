@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from .models import DocumentRecord
+from .models import DocumentRecord, VerificationRecord
 from .patterns import matches_repo_glob
 
 try:
@@ -29,12 +29,21 @@ class Catalog:
         self.documents: List[DocumentRecord] = [
             DocumentRecord.from_dict(item) for item in data.get("documents", [])
         ]
+        self.verifications: List[VerificationRecord] = [
+            VerificationRecord.from_dict(item) for item in data.get("verifications", [])
+        ]
         self.policies: Dict[str, Any] = dict(data.get("policies", {}))
         unsupported = sorted(
             (set(self.taxonomy) | {record.type for record in self.documents}) - CORE_TYPES
         )
         if unsupported:
             raise ValueError(f"Unsupported document type(s): {', '.join(unsupported)}")
+        identifiers = [record.id for record in self.verifications]
+        if any(not item.strip() for item in identifiers):
+            raise ValueError("Verification IDs must not be empty.")
+        duplicates = sorted({item for item in identifiers if identifiers.count(item) > 1})
+        if duplicates:
+            raise ValueError(f"Duplicate verification ID(s): {', '.join(duplicates)}")
 
     @classmethod
     def default(cls) -> "Catalog":
@@ -49,6 +58,7 @@ class Catalog:
                     "decision": ["docs/decisions/**"],
                 },
                 "documents": [],
+                "verifications": [],
                 "policies": {
                     "auto_remove_new_duplicates": True,
                     "auto_repair_documents": ["AGENTS.md", "README.md"],
@@ -84,6 +94,7 @@ class Catalog:
             "version": self.version,
             "taxonomy": self.taxonomy,
             "documents": [record.to_dict() for record in self.documents],
+            "verifications": [record.to_dict() for record in self.verifications],
             "policies": self.policies,
         }
 
@@ -101,6 +112,9 @@ class Catalog:
             if record.path == normalized:
                 return record
         return None
+
+    def verification_for(self, identifier: str) -> Optional[VerificationRecord]:
+        return next((record for record in self.verifications if record.id == identifier), None)
 
     def classify(self, relative_path: str) -> Optional[str]:
         normalized = relative_path.replace("\\", "/")

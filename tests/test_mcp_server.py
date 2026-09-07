@@ -243,9 +243,15 @@ class McpServerTests(unittest.TestCase):
 
     # ---- the exposed surface (§8.1) -------------------------------------
 
-    def test_the_server_exposes_exactly_three_read_only_tools(self) -> None:
+    def test_the_server_exposes_exactly_five_read_only_tools(self) -> None:
         names = sorted(definition["name"] for definition in TOOL_DEFINITIONS)
-        self.assertEqual(names, ["document_status", "get_document", "list_documents"])
+        self.assertEqual(names, [
+            "document_status",
+            "get_document",
+            "list_documents",
+            "list_verifications",
+            "verification_status",
+        ])
         forbidden = ("write", "edit", "delete", "shell", "exec", "fetch", "http", "commit")
         for definition in TOOL_DEFINITIONS:
             for token in forbidden:
@@ -254,6 +260,14 @@ class McpServerTests(unittest.TestCase):
     def test_dispatch_rejects_an_unknown_tool(self) -> None:
         with self.assertRaises(ValueError):
             dispatch(self.supply(), "write_document", {"path": "docs/architecture/API.md"})
+
+    def test_verification_queries_are_read_only_and_never_return_document_content(self) -> None:
+        listing = dispatch(self.supply(), "list_verifications", {})
+        status = dispatch(self.supply(), "verification_status", {"id": "missing"})
+        self.assertEqual(listing["status"], "ok")
+        self.assertEqual(listing["verifications"], [])
+        self.assertFalse(status["reusable"])
+        self.assertNotIn("content", json.dumps({"listing": listing, "status": status}))
 
     def test_document_status_reports_the_internal_scope_without_content(self) -> None:
         status = self.supply().document_status("docs/architecture/API.md")
@@ -308,6 +322,7 @@ class McpServerTests(unittest.TestCase):
         self.assertEqual(config.root, self.root)
         self.assertEqual(config.trust_state_path, self.trust_state_path)
         self.assertEqual(config.catalog_path, self.catalog_path)
+        self.assertEqual(config.ledger_path, self.ledger_path)
 
     def test_supply_picks_up_a_regenerated_trust_state(self) -> None:
         supply = self.supply()

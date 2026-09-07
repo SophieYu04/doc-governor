@@ -1,3 +1,3 @@
 """Doc Governor: evidence-backed Markdown governance for Git repositories."""
 
-__version__ = "0.2.9"
+__version__ = "0.4.0"

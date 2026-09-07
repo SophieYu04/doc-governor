@@ -84,6 +84,72 @@ documents:
   authority: canonical
   environments:
   - production
+verifications:
+- id: unit-tests
+  command:
+  - python3
+  - -m
+  - unittest
+  - discover
+  - -v
+  workdir: .
+  inputs:
+  - docgov/**
+  - tests/**
+  - scripts/**
+  - examples/**
+  - action.yml
+  - pyproject.toml
+  depends_on:
+  - .github/workflows/**
+  - .githooks/**
+  - infra/aws/**
+  related_documents:
+  - AGENTS.md
+  - README.md
+  environment:
+    packages:
+    - PyYAML
+    - mcp
+    - strands-agents
+- id: mcp-demo
+  command:
+  - python3
+  - scripts/demo.py
+  - --mcp-stdio
+  workdir: .
+  inputs:
+  - docgov/**
+  - scripts/demo.py
+  - examples/supabase-demo/**
+  - pyproject.toml
+  related_documents:
+  - README.md
+  environment:
+    packages:
+    - PyYAML
+    - mcp
+- id: bedrock-demo
+  command:
+  - python3
+  - scripts/demo.py
+  - --enable-model
+  workdir: .
+  inputs:
+  - docgov/**
+  - scripts/demo.py
+  - examples/supabase-demo/**
+  - pyproject.toml
+  depends_on:
+  - infra/aws/**
+  related_documents:
+  - README.md
+  timeout_seconds: 180
+  environment:
+    packages:
+    - boto3
+    - pydantic
+    - strands-agents
 policies:
   auto_remove_new_duplicates: true
   auto_repair_documents:

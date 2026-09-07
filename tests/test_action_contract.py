@@ -19,6 +19,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ActionContractTests(unittest.TestCase):
+    def test_v040_is_consistent_across_package_and_examples(self) -> None:
+        project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        package = (ROOT / "docgov/__init__.py").read_text(encoding="utf-8")
+        self.assertIn('version = "0.4.0"', project)
+        self.assertIn('__version__ = "0.4.0"', package)
+        for path in [ROOT / "README.md", *(ROOT / ".github/workflows").glob("docgov-*.yml")]:
+            content = path.read_text(encoding="utf-8")
+            if "SophieYu04/doc-governor@" in content:
+                self.assertIn("SophieYu04/doc-governor@v0.4.0", content, str(path))
+                self.assertNotIn("SophieYu04/doc-governor@v0.2.7", content, str(path))
+                self.assertNotIn("SophieYu04/doc-governor@v0.3.0", content, str(path))
+
     def test_composite_action_exposes_stable_outputs_and_commits_only_modified_paths(self) -> None:
         action = yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))
         self.assertEqual(

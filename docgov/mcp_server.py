@@ -17,7 +17,7 @@ commits code locally and ``trust.json`` is instantly older than HEAD; without th
 recheck the server would serve stale content that is marked fresh. The recheck is
 pure hashing — no model, no network (P6).
 
-The server is read-only: it exposes three tools, none of which writes, executes,
+The server is read-only: it exposes five tools, none of which writes, executes,
 or reaches the network. It fails closed everywhere — a missing trust table, an
 unknown schema version, an unreadable file and an unparseable catalog all refuse
 every read rather than serving everything.
@@ -41,6 +41,7 @@ from .engine import (
 )
 from .ledger import sha256_text
 from .models import DocumentRecord
+from .ledger import Ledger
 from .trust_state import (
     DEFAULT_TRUST_STATE_PATH,
     TrustEntry,
@@ -48,6 +49,8 @@ from .trust_state import (
     load_trust_state,
     trust_entries,
 )
+from .verification import list_verifications as query_verifications
+from .verification import verification_status as query_verification_status
 
 
 SERVER_NAME = "docgov"
@@ -131,6 +134,7 @@ class SupplyConfig:
     root: Path
     trust_state_path: Path
     catalog_path: Path
+    ledger_path: Optional[Path] = None
 
 
 class DocumentSupply:
@@ -425,6 +429,40 @@ class DocumentSupply:
         record["current_source_pointers"] = current_pointers
         return record
 
+    def _verification_sources(self) -> Tuple[Optional[Catalog], Optional[Ledger], Optional[str]]:
+        """Reload mutable query inputs so stale MCP sessions cannot overstate reuse."""
+        self._refresh_if_stale()
+        if self._error is not None:
+            return None, None, self._error
+        try:
+            catalog = Catalog.load(self.config.catalog_path)
+            ledger = Ledger(self.config.ledger_path or (self.config.root / ".docgov/ledger.jsonl"))
+            # Parse now so malformed append-only evidence fails closed before a query.
+            ledger.entries()
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            return None, None, str(exc)
+        return catalog, ledger, None
+
+    def list_verifications(self) -> Dict[str, Any]:
+        catalog, ledger, error = self._verification_sources()
+        if error is not None or catalog is None or ledger is None:
+            return {"status": "unavailable", "verifications": [], "reason": error}
+        return {
+            "status": "ok",
+            "verifications": query_verifications(self.config.root, catalog, ledger),
+        }
+
+    def verification_status(self, identifier: str) -> Dict[str, Any]:
+        catalog, ledger, error = self._verification_sources()
+        if error is not None or catalog is None or ledger is None:
+            return {
+                "id": str(identifier),
+                "known": False,
+                "reusable": False,
+                "reason": error,
+            }
+        return query_verification_status(self.config.root, catalog, ledger, str(identifier))
+
 
 TOOL_DEFINITIONS: List[Dict[str, Any]] = [
     {
@@ -486,6 +524,33 @@ TOOL_DEFINITIONS: List[Dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "list_verifications",
+        "description": (
+            "List recorded verification results and whether each one can be reused in the "
+            "current working tree and execution environment. Read-only; never runs a command."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "verification_status",
+        "description": (
+            "Explain whether one verification result is reusable, which files invalidated it, "
+            "and the exact argv and working directory needed to rerun it. Read-only."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "Verification ID from the Catalog."},
+            },
+            "required": ["id"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -501,6 +566,10 @@ def dispatch(supply: DocumentSupply, name: str, arguments: Dict[str, Any]) -> An
         )
     if name == "document_status":
         return supply.document_status(str(arguments.get("path", "")))
+    if name == "list_verifications":
+        return supply.list_verifications()
+    if name == "verification_status":
+        return supply.verification_status(str(arguments.get("id", "")))
     raise ValueError(f"Unknown tool: {name}")
 
 
@@ -520,12 +589,18 @@ def build_config(argv: Optional[List[str]] = None) -> SupplyConfig:
         default=None,
         help="Catalog path relative to root (default .docgov/catalog.yaml)",
     )
+    parser.add_argument(
+        "--ledger",
+        default=None,
+        help="Ledger path relative to root (default .docgov/ledger.jsonl)",
+    )
     args = parser.parse_args(argv)
     root = Path(args.root).resolve()
     return SupplyConfig(
         root=root,
         trust_state_path=root / (args.trust_state or DEFAULT_TRUST_STATE_PATH),
         catalog_path=root / (args.catalog or ".docgov/catalog.yaml"),
+        ledger_path=root / (args.ledger or ".docgov/ledger.jsonl"),
     )
 
 

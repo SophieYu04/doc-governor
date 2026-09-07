@@ -4,8 +4,8 @@ Hard rules for this recording:
   * No jargon in the first 30 seconds. No "MCP", no "fingerprint", no "Strands",
     no "governance". A judge who has never seen the repo must understand the
     problem before any product name is said.
-  * The single most persuasive moment is 03:00 (a trusted document becomes
-    unreadable with nothing re-running). Do not rush it. Do not talk over it.
+  * The single most persuasive moment is 03:00 (Agent B reuses Agent A's work,
+    then one dependency invalidates only one result). Do not rush it.
   * Everything on screen must be real. No slides pretending to be terminals.
 
 BEFORE RECORDING
@@ -74,7 +74,7 @@ SAY while it runs:
 
 ON SCREEN: the JSON output. Point at:
   - safe_modified_paths → the duplicate is gone, the inventories are synced
-  - blocking_kinds      → conflict, unverified_date
+  - blocking_kinds      → conflict
 
 SAY:
   "What's mechanically recoverable from the source, it fixed: the function
@@ -97,10 +97,8 @@ SAY:
   [3-corrected-contract] The corrected API document: served. Three hundred and
   twenty characters of content.
 
-  [3-unverified-state] The release note: refused. And look at what comes back —
-  not an error. A reason, and a list of the source files to read instead. That
-  matters, because a bare error just makes the agent go open the raw file, which
-  is exactly what we're preventing.
+  [3-unverified-state] The release note: refused. It has no evidence and no source
+  alternative to invent, so the answer is a reason and zero content.
 
   [3-merged-duplicate] And the duplicate we deleted still answers — it tells the
   agent which document absorbed it.
@@ -109,33 +107,27 @@ SAY:
   Not a summary, not the first line."
 
 
-03:00–03:45 — THE MOMENT  ← slow down here
+03:00–03:40 — THE HANDOFF  ← slow down here
 ------------------------------------------------------------------------------
-ON SCREEN: split view. Left: the terminal. Right: supabase/config.toml.
+ON SCREEN: the verification_handoff object from the real demo output.
 
 SAY:
-  "One more. The API document was trusted a second ago — you just watched it get
-  served.
+  "This is the part that saves engineering time after an agent handoff.
 
-  I'm going to change one line in a file it depends on."
+  Agent A ran two checks, once each. Agent B starts in a fresh MCP session and
+  asks which results still apply. Both say reusable. The execution counters are
+  still one — querying did not secretly rerun anything.
 
-DO: add a line to supabase/config.toml. Save. Say nothing for two seconds.
+  Now one API dependency changes. Only api-check becomes invalid, and it names
+  the changed file plus the exact command to rerun. production-check remains
+  reusable. The counters are still one.
 
-DO: read the same document again.
-
-SAY:
-  "Refused. 'A declared dependency of this document changed after it was
-  verified.'
-
-  Nothing re-ran. No pull request, no workflow, no model, no network call. I
-  didn't run Doc Governor. The check happens at the moment of the read, and it's
-  just a hash — microseconds.
-
-  That's the difference between a gate that protects your next commit and one
-  that protects the answer you're getting right now."
+  A document marked current never stands in for this evidence. Commands, input
+  hashes, dependencies, result, and environment are recorded separately in the
+  append-only ledger. A new agent can tell what it inherits and what it must redo."
 
 
-03:45–04:15 — THREE AGENTS, EACH LESS PRIVILEGED THAN THE LAST
+03:40–04:10 — THREE AGENTS, EACH LESS PRIVILEGED THAN THE LAST
 ------------------------------------------------------------------------------
 ON SCREEN: docgov/agents.py, the three AgentSpec blocks. Then the model_trace.
 
@@ -163,7 +155,7 @@ SAY:
   discarded."
 
 
-04:15–04:35 — DRIFT, AND THE AWS BOUNDARY
+04:10–04:30 — DRIFT, AND THE AWS BOUNDARY
 ------------------------------------------------------------------------------
 ON SCREEN: the drift_findings line, then PRODUCTION.md flipping to refused.
 
@@ -178,7 +170,7 @@ SAY:
   and nothing else. Pull requests from forks get no AWS identity at all."
 
 
-04:35–04:50 — CLOSE
+04:30–04:50 — CLOSE
 ------------------------------------------------------------------------------
 ON SCREEN: PR #3 — the decision card and the bot's correction commit.
 

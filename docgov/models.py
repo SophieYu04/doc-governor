@@ -57,6 +57,68 @@ class DocumentRecord:
 
 
 @dataclass
+class VerificationRecord:
+    id: str
+    command: List[str]
+    inputs: List[str]
+    depends_on: List[str] = field(default_factory=list)
+    workdir: str = "."
+    related_documents: List[str] = field(default_factory=list)
+    packages: List[str] = field(default_factory=list)
+    timeout_seconds: Optional[float] = None
+
+    @classmethod
+    def from_dict(cls, value: Dict[str, Any]) -> "VerificationRecord":
+        command = value.get("command", [])
+        if not isinstance(command, list) or not command or not all(
+            isinstance(item, str) and item for item in command
+        ):
+            raise ValueError("Verification command must be a non-empty argv list.")
+        inputs = value.get("inputs", [])
+        depends_on = value.get("depends_on", [])
+        if not isinstance(inputs, list) or not isinstance(depends_on, list):
+            raise ValueError("Verification inputs and depends_on must be lists.")
+        if not inputs and not depends_on:
+            raise ValueError("Verification must declare at least one input or dependency pattern.")
+        environment = value.get("environment", {})
+        if not isinstance(environment, dict):
+            raise ValueError("Verification environment must be a mapping.")
+        packages = environment.get("packages", [])
+        if not isinstance(packages, list) or not all(isinstance(item, str) and item for item in packages):
+            raise ValueError("Verification environment packages must be a string list.")
+        timeout = value.get("timeout_seconds")
+        if timeout is not None and (not isinstance(timeout, (int, float)) or timeout <= 0):
+            raise ValueError("Verification timeout_seconds must be positive.")
+        return cls(
+            id=str(value["id"]),
+            command=list(command),
+            inputs=[str(item) for item in inputs],
+            depends_on=[str(item) for item in depends_on],
+            workdir=str(value.get("workdir", ".")),
+            related_documents=[str(item) for item in value.get("related_documents", [])],
+            packages=list(packages),
+            timeout_seconds=float(timeout) if timeout is not None else None,
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        value: Dict[str, Any] = {
+            "id": self.id,
+            "command": self.command,
+            "workdir": self.workdir,
+            "inputs": self.inputs,
+        }
+        if self.depends_on:
+            value["depends_on"] = self.depends_on
+        if self.related_documents:
+            value["related_documents"] = self.related_documents
+        if self.packages:
+            value["environment"] = {"packages": self.packages}
+        if self.timeout_seconds is not None:
+            value["timeout_seconds"] = self.timeout_seconds
+        return value
+
+
+@dataclass
 class Finding:
     kind: str
     risk: str

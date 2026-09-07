@@ -4,8 +4,8 @@
     {
       "canonical_path": null,
       "content_sha256": "b3e90a0b79f4494b4b843a554b2230844e4d906004a8ca31c6d88d3061f52d68",
-      "dependency_fingerprint": "d60f9bb3a7a5851408f4fb47535428134f3b9b928cc31ee280ef83bb9362e4c4",
-      "head_sha": "bdf20adfdf4ef6ab5446661f517d820f6488bf1a",
+      "dependency_fingerprint": "3e7a5d7c2f4cf7639d484fc381863f4b00a7782cbf5fe4d6bde724acadcb2fd6",
+      "head_sha": "70b1428098c8d01a93b40dee811b387ba6a3d896",
       "path": "AGENTS.md",
       "reason": "Governance control document is readable so the trust gate can bootstrap.",
       "scope": "current_fact",
@@ -33,17 +33,18 @@
         "docgov/repair.py",
         "docgov/supabase.py",
         "docgov/supabase_remote.py",
-        "docgov/trust_state.py"
+        "docgov/trust_state.py",
+        "docgov/verification.py"
       ],
       "type": "procedure",
       "usable": true,
-      "verified_at": "2026-09-06T10:07:40Z"
+      "verified_at": "2026-09-07T07:36:54Z"
     },
     {
       "canonical_path": null,
-      "content_sha256": "ea38b01d11dc9e89a74d9da0e54d6b15df1d345fd4a6ede8f14513f618a36c99",
-      "dependency_fingerprint": "71f32a5c49dfe316b848d5f2ca777b6a168091090d1a582dba6456ee66be94bd",
-      "head_sha": "bdf20adfdf4ef6ab5446661f517d820f6488bf1a",
+      "content_sha256": "fdff811a4fa2d389500db9cc2d5052fe46d271c9cdd39590ab5bdea8baa1eda1",
+      "dependency_fingerprint": "267bbdea737e24367fdc120218dd5ff45e9a36fd376a1763985424e5f9027e7d",
+      "head_sha": "70b1428098c8d01a93b40dee811b387ba6a3d896",
       "path": "README.md",
       "reason": "The document is current and its recorded evidence still matches.",
       "scope": "current_fact",
@@ -72,11 +73,12 @@
         "docgov/supabase.py",
         "docgov/supabase_remote.py",
         "docgov/trust_state.py",
+        "docgov/verification.py",
         "pyproject.toml"
       ],
       "type": "contract",
       "usable": true,
-      "verified_at": "2026-09-06T10:07:40Z"
+      "verified_at": "2026-09-07T07:36:54Z"
     },
     {
       "canonical_path": null,

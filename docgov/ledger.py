@@ -91,3 +91,16 @@ class Ledger:
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
         return True
+
+    def append_verification(self, entry: Dict[str, Any]) -> bool:
+        """Append one validated verification event without changing document evidence."""
+        identity = str(entry.get("event_id", ""))
+        if entry.get("kind") != "verification" or not identity:
+            raise ValueError("A verification event requires kind=verification and event_id.")
+        for existing in self.entries():
+            if existing.get("kind") == "verification" and existing.get("event_id") == identity:
+                return False
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry, ensure_ascii=False, sort_keys=True) + "\n")
+        return True
